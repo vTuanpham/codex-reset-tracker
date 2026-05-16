@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codex-reset-tracker"
+version = "0.1.0"
+description = "Track X/Twitter posts for possible Codex quota reset signals and notify configured channels."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Codex Reset Tracker" }]
+dependencies = [
+    "twikit>=2.3.1",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.11.0",
+]
+
+[project.scripts]
+codex-reset-tracker = "codex_reset_tracker.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

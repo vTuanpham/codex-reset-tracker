@@ -1,0 +1,97 @@
+{
+  "data_dir": "data",
+  "state_path": "data/state.sqlite3",
+  "local_timezone": "Asia/Saigon",
+  "time": {
+    "user_timezone": "Asia/Saigon",
+    "default_source_timezone": "America/Los_Angeles",
+    "account_timezones": {
+      "sama": "America/Los_Angeles",
+      "thsottiaux": "Europe/Paris",
+      "OpenAI": "America/Los_Angeles",
+      "OpenAIDevs": "America/Los_Angeles",
+      "ChatGPTapp": "America/Los_Angeles",
+      "OpenAIStatus": "America/Los_Angeles"
+    }
+  },
+  "twitter": {
+    "language": "en-US",
+    "proxy": null,
+    "user_agent": null,
+    "cookies_file": "data/x_cookies.json",
+    "username_env": "CODQ_X_USERNAME",
+    "email_env": "CODQ_X_EMAIL",
+    "password_env": "CODQ_X_PASSWORD",
+    "totp_secret_env": "CODQ_X_TOTP_SECRET"
+  },
+  "polling": {
+    "interval_seconds": 300,
+    "jitter_seconds": 45,
+    "request_delay_seconds": 2.0,
+    "alert_on_first_scan": false,
+    "new_tweet_grace_seconds": 180,
+    "tweet_count_per_account": 20,
+    "search_count_per_query": 20,
+    "max_alerts_per_scan": 10,
+    "accounts": [
+      "sama",
+      "thsottiaux",
+      "OpenAI",
+      "OpenAIDevs",
+      "ChatGPTapp",
+      "OpenAIStatus"
+    ],
+    "search_queries": [
+      "(codex OR \"ChatGPT Codex\" OR \"OpenAI Codex\") (quota OR \"usage limit\" OR \"rate limit\" OR cap OR limits) (reset OR refresh OR renew OR increased OR raised)",
+      "from:sama (codex quota OR codex reset OR \"Codex usage\")",
+      "from:thsottiaux (codex quota OR codex reset OR \"Codex usage\")",
+      "from:OpenAI (codex quota OR codex reset OR \"Codex usage\")",
+      "from:OpenAIDevs (codex quota OR codex reset OR \"Codex usage\")",
+      "(codex OR \"ChatGPT Codex\") (quota OR limit OR cap) (\"later today\" OR evening OR tonight OR tomorrow OR soon OR shortly)"
+    ]
+  },
+  "matching": {
+    "case_sensitive": false,
+    "require_all_include_patterns": true,
+    "context_window_chars": 220,
+    "include_patterns": [
+      "\\b(?:codex|chatgpt\\s+codex|openai\\s+codex)\\b",
+      "\\b(?:quota|usage\\s+limit|rate\\s+limit|message\\s+cap|cap|limits?)\\b",
+      "\\b(?:reset|refreshed?|renew(?:ed)?|restore(?:d)?|increase[sd]?|bump(?:ed)?|rais(?:e|ed)|more\\s+usage|additional\\s+usage)\\b"
+    ],
+    "exclude_patterns": [
+      "\\b(?:password\\s+reset|reset\\s+password|factory\\s+reset|hard\\s+reset|account\\s+recovery)\\b"
+    ]
+  },
+  "notifications": {
+    "title": "Potential Codex quota reset",
+    "channels": {
+      "stdout": {
+        "enabled": true
+      },
+      "telegram": {
+        "enabled": false,
+        "bot_token_env": "CODQ_TELEGRAM_BOT_TOKEN",
+        "chat_id_env": "CODQ_TELEGRAM_CHAT_ID"
+      },
+      "email": {
+        "enabled": false,
+        "smtp_host_env": "CODQ_SMTP_HOST",
+        "smtp_port": 587,
+        "smtp_username_env": "CODQ_SMTP_USERNAME",
+        "smtp_password_env": "CODQ_SMTP_PASSWORD",
+        "from_env": "CODQ_EMAIL_FROM",
+        "to_env": "CODQ_EMAIL_TO",
+        "starttls": true
+      },
+      "webhook": {
+        "enabled": false,
+        "url_env": "CODQ_WEBHOOK_URL",
+        "format": "generic"
+      },
+      "desktop": {
+        "enabled": false
+      }
+    }
+  }
+}
