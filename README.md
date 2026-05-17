@@ -25,57 +25,143 @@ cd codex-reset-tracker
 ./install.sh
 ```
 
-Create `config.json` and `.env`:
+Run the guided setup wizard:
 
 ```bash
 uv run codex-reset-tracker setup
 ```
 
-Edit `.env` if setup left credentials blank. You need either:
+The wizard walks you through:
 
-- recommended: an existing Twikit/browser cookies file at `data/x_cookies.json`
-- fallback: `CODQ_X_USERNAME` and `CODQ_X_PASSWORD`, optionally `CODQ_X_EMAIL`
-  and `CODQ_X_TOTP_SECRET`
+- your local timezone for reset-window translation
+- X/Twitter auth
+- notification channels
+- final confirmation before writing files
 
-`CODQ_X_TOTP_SECRET` is only for X/Twitter accounts that have authenticator-app
-2FA enabled. Leave it blank if your account does not use TOTP-based 2FA.
+It writes non-secret settings to `config.json` and secrets to `.env`. You should
+not need to hand-edit `config.json` for normal setup.
 
-Cookies are strongly preferred because X/Twitter often blocks automated
-username/password login with Cloudflare. The recommended exporter is
-[Cookie-Editor](https://chromewebstore.google.com/detail/cookie-editor/ookdjilphngeeeghgngjabigmpepanpl?hl=en-US&utm_source=ext_sidebar).
+## CLI Setup Flow
+
+### 1. Install
+
+```bash
+git clone https://github.com/vTuanpham/codex-reset-tracker.git
+cd codex-reset-tracker
+./install.sh
+```
+
+### 2. Run The Wizard
+
+```bash
+uv run codex-reset-tracker setup
+```
+
+The wizard asks for values in the terminal and prints the exact next command at
+the end. Press Enter to accept defaults.
+
+If you already have `config.json` and only want to configure notifications, run:
+
+```bash
+uv run codex-reset-tracker setup-notifications
+```
+
+That command preserves existing X/Twitter auth values in `.env`.
+
+### 3. Add X/Twitter Auth
+
+Recommended path: browser cookies. X/Twitter often blocks fresh
+username/password automation with Cloudflare.
 
 Cookie setup step by step:
 
-1. Install Cookie-Editor in Chrome, Chromium, Brave, Edge, or another compatible
+1. Install Cookie-Editor:
+   https://chromewebstore.google.com/detail/cookie-editor/ookdjilphngeeeghgngjabigmpepanpl?hl=en-US&utm_source=ext_sidebar
+2. Open `https://x.com` in Chrome, Chromium, Brave, Edge, or another compatible
    browser.
-2. Open `https://x.com` in that browser.
-3. Log into the X/Twitter account you want the tracker to use.
+3. Log into the X/Twitter account the tracker should use.
 4. Click the Cookie-Editor extension icon while you are on `x.com`.
-5. Use Cookie-Editor's export action and choose/copy the JSON export.
+5. Use Cookie-Editor's export action and copy/download the JSON export.
 6. In this repo, create the data directory if needed:
 
    ```bash
    mkdir -p data
    ```
 
-7. Save the exported JSON exactly as:
-
-   ```bash
-   data/x_cookies.json
-   ```
-
-8. Run:
-
-   ```bash
-   uv run codex-reset-tracker doctor
-   uv run codex-reset-tracker check
-   ```
+7. Save the Cookie-Editor JSON at `data/x_cookies.json`.
 
 When `data/x_cookies.json` exists, the tracker loads cookies and skips a fresh
 username/password login attempt. Do not commit or share `data/x_cookies.json`;
 it can grant access to your X session.
 
-Check readiness:
+Fallback path: username/password. The setup wizard can write these env vars:
+
+- `CODQ_X_USERNAME`
+- `CODQ_X_PASSWORD`
+- optional `CODQ_X_EMAIL`
+- optional `CODQ_X_TOTP_SECRET`
+
+`CODQ_X_TOTP_SECRET` is only for X/Twitter accounts that have authenticator-app
+2FA enabled. Leave it blank if your account does not use TOTP-based 2FA.
+
+### 4. Configure Notifications
+
+The setup wizard asks about each notification channel. You can enable multiple
+channels.
+
+Telegram setup in the CLI:
+
+1. Run:
+
+   ```bash
+   uv run codex-reset-tracker setup-notifications
+   ```
+
+2. Answer `y` to `Enable Telegram mobile alerts?`.
+3. In Telegram, message `@BotFather`.
+4. Send `/newbot`, follow the prompts, and copy the bot token.
+5. Paste the bot token into the CLI prompt.
+6. Open your new bot chat and send it any message.
+7. Let the wizard try to auto-detect your chat id.
+8. If auto-detect does not find it yet, rerun `setup-notifications` after the
+   bot receives a message, or paste the chat id manually.
+
+Email setup in the CLI:
+
+1. Run `uv run codex-reset-tracker setup-notifications`.
+2. Answer `y` to `Enable email alerts?`.
+3. Enter your SMTP host, usually one of:
+   - `smtp.gmail.com`
+   - `smtp.office365.com`
+   - `smtp.mail.yahoo.com`
+4. Use port `587` with STARTTLS unless your provider says otherwise.
+5. Enter SMTP username and password/app password.
+6. Enter the from address and recipient address.
+
+Webhook setup in the CLI:
+
+1. Run `uv run codex-reset-tracker setup-notifications`.
+2. Answer `y` to webhook alerts.
+3. Choose `generic`, `discord`, or `slack`.
+4. Paste the incoming webhook URL.
+
+Desktop setup in the CLI:
+
+1. Run `uv run codex-reset-tracker setup-notifications`.
+2. Answer `y` to desktop notifications.
+3. On WSL, the tracker detects WSL and sends the popup to Windows through
+   `powershell.exe`.
+4. Native Linux needs `notify-send`; macOS uses `osascript`; Windows uses
+   PowerShell.
+5. Verify it immediately with:
+
+   ```bash
+   uv run codex-reset-tracker test-notify
+   ```
+
+### 5. Verify
+
+Check local readiness:
 
 ```bash
 uv run codex-reset-tracker doctor
@@ -93,7 +179,7 @@ Test notifications without scraping X/Twitter:
 uv run codex-reset-tracker test-notify
 ```
 
-Run the first scan:
+Run one scan:
 
 ```bash
 uv run codex-reset-tracker check
@@ -206,6 +292,12 @@ minutes`, and simple `at 5pm` style times.
 - Use a low-frequency polling interval. The default is 5 minutes with jitter.
 - Twikit uses authenticated scraping; use your own account and keep the polling
   behavior conservative.
+- Twikit compatibility fixes live in `src/codex_reset_tracker/twikit_compat.py`
+  as an explicit monkeypatch registry. Each patch is named, idempotent, and
+  scoped to the current upstream parser breakage.
+- Desktop notifications from WSL are routed to Windows through `powershell.exe`.
+  If `doctor` says `wsl-windows-unavailable`, enable WSL Windows interop or use
+  Telegram/email/webhook instead.
 - SQLite tracks seen tweet ids and alerted tweet text hashes. The default runner
   alerts on newly discovered tweet ids only, not historical backfill or old
   tweets edited later.

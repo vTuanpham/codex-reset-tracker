@@ -2,10 +2,17 @@ import asyncio
 import contextlib
 import io
 import unittest
+from unittest.mock import patch
 
 from codex_reset_tracker.config import NotificationsConfig
 from codex_reset_tracker.models import TweetMatch, TweetRecord
-from codex_reset_tracker.notifiers import NotificationManager, format_alert
+from codex_reset_tracker.notifiers import (
+    AlertMessage,
+    NotificationManager,
+    desktop_notification_backend,
+    desktop_notification_command,
+    format_alert,
+)
 
 
 def match() -> TweetMatch:
@@ -38,6 +45,40 @@ class NotifierTests(unittest.TestCase):
             result = asyncio.run(manager.send_match(match()))
 
         self.assertEqual(result["stdout"], {"ok": True})
+
+    def test_wsl_desktop_notification_routes_to_windows_powershell(self):
+        message = AlertMessage(
+            title="Codex reset",
+            body="Quota reset from WSL",
+            url="https://x.com/OpenAI/status/123",
+            payload={},
+        )
+
+        with patch("codex_reset_tracker.notifiers.platform.system", return_value="Linux"):
+            with patch.dict("os.environ", {"WSL_DISTRO_NAME": "Ubuntu"}):
+                with patch("codex_reset_tracker.notifiers.shutil.which", return_value="/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"):
+                    command = desktop_notification_command(message)
+                    backend = desktop_notification_backend()
+
+        self.assertEqual(command[0], "powershell.exe")
+        self.assertIn("-ExecutionPolicy", command)
+        self.assertIn("System.Windows.Forms.NotifyIcon", command[-1])
+        self.assertEqual(backend, "wsl-windows")
+
+    def test_powershell_desktop_command_escapes_single_quotes(self):
+        message = AlertMessage(
+            title="Codex user's reset",
+            body="It's ready",
+            url="https://x.com/OpenAI/status/123",
+            payload={},
+        )
+
+        with patch("codex_reset_tracker.notifiers.platform.system", return_value="Windows"):
+            with patch("codex_reset_tracker.notifiers.shutil.which", return_value="powershell.exe"):
+                command = desktop_notification_command(message)
+
+        self.assertIn("'Codex user''s reset'", command[-1])
+        self.assertIn("'It''s ready'", command[-1])
 
 
 if __name__ == "__main__":

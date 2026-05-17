@@ -29,6 +29,8 @@ Install complete.
 
 Next:
   uv run codex-reset-tracker setup
+  # Existing installs can rerun only notification setup:
+  uv run codex-reset-tracker setup-notifications
   uv run codex-reset-tracker doctor
   uv run codex-reset-tracker test-notify
   uv run codex-reset-tracker check

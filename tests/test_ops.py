@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import os
 import tempfile
@@ -6,10 +8,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 from codex_reset_tracker.ops import (
+    _extract_telegram_chat_id,
     _validate_service_prereqs,
     doctor_checks,
     OpsError,
     _unit_text,
+    write_notification_setup,
     write_setup,
 )
 
@@ -31,6 +35,71 @@ class OpsTests(unittest.TestCase):
             self.assertEqual(config["time"]["user_timezone"], "Asia/Saigon")
             self.assertIn("account_timezones", config["time"])
             self.assertIn("Add secrets here", env_path.read_text(encoding="utf-8"))
+
+    def test_notification_setup_guides_telegram_without_editing_json_by_hand(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            env_path = Path(tmp) / ".env"
+            write_setup(
+                config_path=config_path,
+                env_path=env_path,
+                force=False,
+                non_interactive=True,
+            )
+
+            answers = iter(["", "y", "n", "123456", "n", "n", "n", "y"])
+            with patch("builtins.input", side_effect=lambda _prompt: next(answers)):
+                with patch("getpass.getpass", return_value="telegram-token"):
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        write_notification_setup(
+                            config_path=config_path,
+                            env_path=env_path,
+                            non_interactive=False,
+                        )
+
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            env = env_path.read_text(encoding="utf-8")
+            self.assertTrue(config["notifications"]["channels"]["telegram"]["enabled"])
+            self.assertIn('CODQ_TELEGRAM_BOT_TOKEN="telegram-token"', env)
+            self.assertIn('CODQ_TELEGRAM_CHAT_ID="123456"', env)
+
+    def test_notification_setup_preserves_existing_auth_env(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            env_path = Path(tmp) / ".env"
+            write_setup(
+                config_path=config_path,
+                env_path=env_path,
+                force=False,
+                non_interactive=True,
+            )
+            env_path.write_text(
+                'CODQ_X_USERNAME="existing-user"\nCODQ_X_PASSWORD="existing-pass"\n',
+                encoding="utf-8",
+            )
+
+            write_notification_setup(
+                config_path=config_path,
+                env_path=env_path,
+                non_interactive=True,
+            )
+
+            env = env_path.read_text(encoding="utf-8")
+            self.assertIn('CODQ_X_USERNAME="existing-user"', env)
+            self.assertIn('CODQ_X_PASSWORD="existing-pass"', env)
+
+    def test_extract_telegram_chat_id_from_get_updates_payload(self):
+        chat_id = _extract_telegram_chat_id(
+            {
+                "ok": True,
+                "result": [
+                    {"message": {"chat": {"id": 111}}},
+                    {"channel_post": {"chat": {"id": -222}}},
+                ],
+            }
+        )
+
+        self.assertEqual(chat_id, "-222")
 
     def test_doctor_reports_missing_auth_after_basic_setup(self):
         with tempfile.TemporaryDirectory() as tmp:

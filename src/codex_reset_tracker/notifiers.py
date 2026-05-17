@@ -13,6 +13,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from email.message import EmailMessage
+from pathlib import Path
 from typing import Any, Protocol
 
 from .config import NotificationsConfig
@@ -237,38 +238,107 @@ class DesktopNotifier:
         await asyncio.to_thread(self._send_sync, message)
 
     def _send_sync(self, message: AlertMessage) -> None:
-        system = platform.system().lower()
-        if system == "linux":
-            if not shutil.which("notify-send"):
-                raise NotificationError("notify-send is not installed")
-            subprocess.run(
-                ["notify-send", message.title, message.body[:700]],
-                check=True,
-                timeout=10,
+        command = desktop_notification_command(message)
+        subprocess.run(command, check=True, timeout=15)
+
+
+def desktop_notification_command(message: AlertMessage) -> list[str]:
+    system = platform.system().lower()
+    if system == "linux" and _is_wsl():
+        executable = _windows_powershell_executable(wsl=True)
+        if executable is None:
+            raise NotificationError(
+                "WSL desktop notification requires Windows interop and powershell.exe. "
+                "Make sure WSL interop is enabled and powershell.exe is available on PATH."
             )
-        elif system == "darwin":
-            script = (
-                'display notification '
-                f"{json.dumps(message.body[:700])} "
-                "with title "
-                f"{json.dumps(message.title)}"
+        return _windows_notification_command(message, executable)
+    if system == "linux":
+        if not shutil.which("notify-send"):
+            raise NotificationError(
+                "notify-send is not installed. On WSL, enable Windows interop so "
+                "powershell.exe is available, or install notify-send for native Linux notifications."
             )
-            subprocess.run(["osascript", "-e", script], check=True, timeout=10)
-        elif system == "windows":
-            escaped_title = message.title.replace("'", "''")
-            escaped_body = message.body[:700].replace("'", "''")
-            command = (
-                "Add-Type -AssemblyName System.Windows.Forms; "
-                "$n = New-Object System.Windows.Forms.NotifyIcon; "
-                "$n.Icon = [System.Drawing.SystemIcons]::Information; "
-                "$n.BalloonTipTitle = '{title}'; "
-                "$n.BalloonTipText = '{body}'; "
-                "$n.Visible = $true; $n.ShowBalloonTip(5000); "
-                "Start-Sleep -Seconds 6; $n.Dispose()"
-            ).format(title=escaped_title, body=escaped_body)
-            subprocess.run(["powershell", "-NoProfile", "-Command", command], check=True, timeout=15)
-        else:
-            raise NotificationError(f"Desktop notification is not supported on {system}")
+        return ["notify-send", message.title, message.body[:700]]
+    if system == "darwin":
+        script = (
+            'display notification '
+            f"{json.dumps(message.body[:700])} "
+            "with title "
+            f"{json.dumps(message.title)}"
+        )
+        return ["osascript", "-e", script]
+    if system == "windows":
+        executable = _windows_powershell_executable(wsl=False)
+        if executable is None:
+            raise NotificationError("Windows desktop notification requires powershell.exe")
+        return _windows_notification_command(message, executable)
+    raise NotificationError(f"Desktop notification is not supported on {system}")
+
+
+def desktop_notification_backend() -> str:
+    system = platform.system().lower()
+    if system == "linux" and _is_wsl():
+        return "wsl-windows" if _windows_powershell_executable(wsl=True) else "wsl-windows-unavailable"
+    if system == "linux":
+        return "linux-notify-send" if shutil.which("notify-send") else "linux-notify-send-unavailable"
+    if system == "darwin":
+        return "macos-osascript" if shutil.which("osascript") else "macos-osascript-unavailable"
+    if system == "windows":
+        return "windows-powershell" if _windows_powershell_executable(wsl=False) else "windows-powershell-unavailable"
+    return f"unsupported-{system}"
+
+
+def desktop_notifications_available() -> bool:
+    backend = desktop_notification_backend()
+    return not backend.endswith("-unavailable") and not backend.startswith("unsupported-")
+
+
+def _windows_powershell_executable(*, wsl: bool) -> str | None:
+    candidates = ("powershell.exe",) if wsl else ("powershell.exe", "powershell")
+    for candidate in candidates:
+        if shutil.which(candidate):
+            return candidate
+    return None
+
+
+def _windows_notification_command(message: AlertMessage, executable: str) -> list[str]:
+    title = _powershell_single_quoted(message.title)
+    body = _powershell_single_quoted(message.body[:700])
+    command = (
+        "Add-Type -AssemblyName System.Windows.Forms; "
+        "Add-Type -AssemblyName System.Drawing; "
+        "$n = New-Object System.Windows.Forms.NotifyIcon; "
+        "$n.Icon = [System.Drawing.SystemIcons]::Information; "
+        f"$n.BalloonTipTitle = {title}; "
+        f"$n.BalloonTipText = {body}; "
+        "$n.Visible = $true; "
+        "$n.ShowBalloonTip(5000); "
+        "Start-Sleep -Seconds 6; "
+        "$n.Dispose()"
+    )
+    return [
+        executable,
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        command,
+    ]
+
+
+def _powershell_single_quoted(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _is_wsl() -> bool:
+    if os.getenv("WSL_INTEROP") or os.getenv("WSL_DISTRO_NAME"):
+        return True
+    try:
+        release = Path("/proc/sys/kernel/osrelease").read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return "microsoft" in release.lower() or "wsl" in release.lower()
 
 
 def _required_env(config: dict[str, Any], key: str) -> str:

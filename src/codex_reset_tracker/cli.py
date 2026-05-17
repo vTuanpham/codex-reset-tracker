@@ -12,7 +12,7 @@ from pathlib import Path
 
 from .config import ConfigError, load_config
 from .models import TweetRecord
-from .notifiers import NotificationManager
+from .notifiers import NotificationError, NotificationManager
 from .ops import (
     OpsError,
     daemon_start,
@@ -22,6 +22,7 @@ from .ops import (
     install_user_service,
     read_status,
     service_action,
+    write_notification_setup,
     write_setup,
 )
 from .runner import QuotaResetTracker
@@ -42,6 +43,8 @@ def main(argv: list[str] | None = None) -> int:
             return init_config(args)
         if args.command == "setup":
             return setup(args)
+        if args.command == "setup-notifications":
+            return setup_notifications(args)
         if args.command == "doctor":
             return asyncio.run(doctor(args))
         if args.command == "check":
@@ -60,6 +63,10 @@ def main(argv: list[str] | None = None) -> int:
             return asyncio.run(test_notify(args))
     except (ConfigError, OpsError) as exc:
         LOGGER.error("%s", exc)
+        return 2
+    except NotificationError as exc:
+        LOGGER.error("%s", exc)
+        LOGGER.error("Run `uv run codex-reset-tracker setup-notifications` to configure or repair notification channels.")
         return 2
     except subprocess.CalledProcessError as exc:
         LOGGER.error("command failed with exit code %s: %s", exc.returncode, exc.cmd)
@@ -84,6 +91,14 @@ def build_parser() -> argparse.ArgumentParser:
     setup_cmd.add_argument("--env", type=Path, default=Path(".env"))
     setup_cmd.add_argument("--force", action="store_true")
     setup_cmd.add_argument("--non-interactive", action="store_true")
+
+    notification_setup = subcommands.add_parser(
+        "setup-notifications",
+        help="guide notification setup and update config.json/.env",
+    )
+    notification_setup.add_argument("--config", type=Path, default=Path("config.json"))
+    notification_setup.add_argument("--env", type=Path, default=Path(".env"))
+    notification_setup.add_argument("--non-interactive", action="store_true")
 
     doctor_cmd = subcommands.add_parser("doctor", help="check local readiness")
     doctor_cmd.add_argument("--config", type=Path, default=Path("config.json"))
@@ -155,6 +170,17 @@ def setup(args) -> int:
     )
     LOGGER.info("wrote %s and %s", config_path, env_path)
     LOGGER.info("next: run `uv run codex-reset-tracker doctor`")
+    return 0
+
+
+def setup_notifications(args) -> int:
+    config_path, env_path = write_notification_setup(
+        config_path=args.config,
+        env_path=args.env,
+        non_interactive=args.non_interactive,
+    )
+    LOGGER.info("updated notification setup in %s and %s", config_path, env_path)
+    LOGGER.info("next: run `uv run codex-reset-tracker test-notify`")
     return 0
 
 

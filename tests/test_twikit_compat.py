@@ -1,6 +1,7 @@
 import unittest
 
 from codex_reset_tracker.twikit_compat import (
+    apply_twikit_compatibility_patches,
     _resolve_on_demand_file_url,
     patch_twikit_client_transaction,
     _with_user_defaults,
@@ -35,6 +36,14 @@ class TwikitCompatTests(unittest.TestCase):
 
         self.assertTrue(first)
         self.assertTrue(second)
+
+    def test_patch_registry_reports_named_results(self):
+        results = apply_twikit_compatibility_patches()
+        by_name = {result.name: result for result in results}
+
+        self.assertIn("client-transaction-manifest", by_name)
+        self.assertIn("user-optional-fields", by_name)
+        self.assertTrue(all(result.ok for result in results))
 
     def test_forbidden_login_message_mentions_cloudflare_cookie_fallback(self):
         message = _forbidden_login_message(Exception("403 Cloudflare blocked"))
