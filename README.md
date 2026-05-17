@@ -78,11 +78,14 @@ session.
 
 | Channel | Best for | CLI setup |
 | --- | --- | --- |
+| Desktop | active workstation popup | `setup-notifications` -> enable desktop |
 | Telegram | fastest mobile alert | `setup-notifications` -> enable Telegram |
 | Email | durable fallback | `setup-notifications` -> enable email |
 | Webhook | Discord, Slack, ntfy, Pushover, Home Assistant | `setup-notifications` -> enable webhook |
-| Desktop | active workstation popup | `setup-notifications` -> enable desktop |
 | stdout | logs and testing | enabled by default |
+
+Desktop is asked first in the wizard. When running inside WSL, desktop
+notifications are forwarded to Windows through `powershell.exe`.
 
 Telegram quick path:
 
@@ -91,9 +94,6 @@ Telegram quick path:
 3. Paste the token into the wizard.
 4. Send any message to the new bot.
 5. Let the wizard auto-detect the chat id, or paste it manually.
-
-When running inside WSL, desktop notifications are forwarded to Windows through
-`powershell.exe`.
 
 ## Accounts
 

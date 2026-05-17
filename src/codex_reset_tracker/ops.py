@@ -748,9 +748,10 @@ def _configure_notifications(
     channels = raw_config["notifications"]["channels"]
     if not non_interactive:
         print(f"\n{step_label}")
-        print("Recommended path: Telegram for fast phone alerts, email as a fallback.")
+        print("Recommended path: desktop first for local confirmation, Telegram for phone alerts.")
         print("You can enable multiple channels now and rerun setup-notifications later.")
 
+    _configure_desktop(channels, non_interactive)
     channels["stdout"]["enabled"] = _yes_no(
         "Keep console/stdout alerts enabled?",
         bool(channels.get("stdout", {}).get("enabled", True)),
@@ -759,7 +760,6 @@ def _configure_notifications(
     _configure_telegram(channels, env_values, non_interactive)
     _configure_email(channels, env_values, non_interactive)
     _configure_webhook(channels, env_values, non_interactive)
-    _configure_desktop(channels, non_interactive)
 
 
 def _configure_telegram(

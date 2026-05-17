@@ -92,7 +92,7 @@ class OpsTests(unittest.TestCase):
                 non_interactive=True,
             )
 
-            answers = iter(["", "y", "n", "123456", "n", "n", "n", "y"])
+            answers = iter(["n", "", "y", "n", "123456", "n", "n", "y"])
             with patch("builtins.input", side_effect=lambda _prompt: next(answers)):
                 with patch("getpass.getpass", return_value="telegram-token"):
                     with contextlib.redirect_stdout(io.StringIO()):
