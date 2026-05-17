@@ -39,7 +39,7 @@ uv run codex-reset-tracker run
 | Notification wizard only | `uv run codex-reset-tracker setup-notifications` |
 | Account wizard only | `uv run codex-reset-tracker setup-accounts` |
 | List tracked accounts | `uv run codex-reset-tracker accounts list` |
-| Add one account | `uv run codex-reset-tracker accounts add thsottiaux --timezone Europe/Paris` |
+| Add one account | `uv run codex-reset-tracker accounts add thsottiaux --timezone America/Los_Angeles` |
 | Remove one account | `uv run codex-reset-tracker accounts remove thsottiaux` |
 | Refresh recommended accounts | `uv run codex-reset-tracker accounts defaults` |
 
@@ -59,8 +59,7 @@ username/password login with Cloudflare.
 
 Cookie steps:
 
-1. Install Cookie-Editor:
-   https://chromewebstore.google.com/detail/cookie-editor/ookdjilphngeeeghgngjabigmpepanpl?hl=en-US&utm_source=ext_sidebar
+1. Install [Cookie-Editor (Chrome Web Store)](https://chromewebstore.google.com/detail/cookie-editor/ookdjilphngeeeghgngjabigmpepanpl?hl=en-US&utm_source=ext_sidebar).
 2. Open `https://x.com` and log in.
 3. Click Cookie-Editor while on `x.com`.
 4. Export/copy JSON.
@@ -93,8 +92,8 @@ Telegram quick path:
 4. Send any message to the new bot.
 5. Let the wizard auto-detect the chat id, or paste it manually.
 
-WSL desktop notifications are supported. When running inside WSL, the desktop
-channel sends the popup to Windows through `powershell.exe`.
+When running inside WSL, desktop notifications are forwarded to Windows through
+`powershell.exe`.
 
 ## Accounts
 
@@ -138,7 +137,7 @@ and the [Anthropic radar](https://llmgram.app/anthropic-radar/).
 | Source timezone | how tweet phrases are interpreted | per account |
 
 Example: if `@thsottiaux` says `this evening`, the phrase is interpreted in
-`Europe/Paris`, then translated to your detected local timezone.
+`America/Los_Angeles`, then translated to your detected local timezone.
 
 Override your timezone only when needed:
 
@@ -156,7 +155,6 @@ Override your timezone only when needed:
 | Mode | Commands |
 | --- | --- |
 | systemd user service | `uv run codex-reset-tracker service install` then `uv run codex-reset-tracker service start` |
-| WSL auto-start from Windows | `uv run codex-reset-tracker windows-startup install --force` |
 | portable daemon | `uv run codex-reset-tracker daemon start` |
 | foreground | `uv run codex-reset-tracker run` |
 
@@ -165,22 +163,15 @@ Useful status/log commands:
 ```bash
 uv run codex-reset-tracker service status
 uv run codex-reset-tracker service logs
-uv run codex-reset-tracker windows-startup status
 uv run codex-reset-tracker daemon status
 uv run codex-reset-tracker daemon logs
 uv run codex-reset-tracker status
 ```
 
-### WSL Startup Behavior
+### Optional WSL Auto-Start
 
-| Situation | What happens |
-| --- | --- |
-| WSL distro is already running, then Windows sleeps/wakes | the Linux service should resume with WSL |
-| Windows reboots or WSL was shut down | the Linux service waits until something starts the distro |
-| You open Ubuntu, Windows Terminal, VS Code Remote WSL, or run `wsl.exe` | WSL starts, then enabled systemd user units can run |
-| `windows-startup` task is installed | Windows starts WSL and asks the tracker service to start at logon, unlock, and wake |
-
-Recommended WSL setup:
+If you use WSL and want tracker auto-start after Windows logon/unlock/wake,
+install the Windows scheduled-task bridge:
 
 ```bash
 uv run codex-reset-tracker service install
@@ -189,7 +180,7 @@ uv run codex-reset-tracker windows-startup install --force
 uv run codex-reset-tracker windows-startup status
 ```
 
-If your distro name is not auto-detected:
+If distro detection fails, set it explicitly:
 
 ```bash
 uv run codex-reset-tracker windows-startup install --distro Ubuntu --force

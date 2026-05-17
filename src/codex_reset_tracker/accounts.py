@@ -21,7 +21,7 @@ DEFAULT_TRACKED_ACCOUNTS: tuple[TrackedAccount, ...] = (
     TrackedAccount("markchen90", "America/Los_Angeles", "openai-people", "Mark Chen"),
     TrackedAccount("nickaturley", "America/Los_Angeles", "openai-people", "Nick Turley"),
     TrackedAccount("kevinweil", "America/Los_Angeles", "openai-people", "Kevin Weil"),
-    TrackedAccount("thsottiaux", "Europe/Paris", "openai-codex", "Thibault Sottiaux / Codex"),
+    TrackedAccount("thsottiaux", "America/Los_Angeles", "openai-codex", "Thibault Sottiaux / Codex"),
     TrackedAccount("embirico", "America/Los_Angeles", "openai-codex", "Alexander Embiricos / Codex"),
     TrackedAccount("hansonwng", "America/Los_Angeles", "openai-codex", "Hanson Wang / Codex"),
     TrackedAccount("katyhshi", "America/Los_Angeles", "openai-codex", "Katy Shi / Codex"),
