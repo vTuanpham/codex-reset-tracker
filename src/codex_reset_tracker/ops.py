@@ -50,7 +50,13 @@ def write_setup(
     _maybe_env(env_values, "CODQ_X_USERNAME", "X/Twitter username", non_interactive)
     _maybe_env(env_values, "CODQ_X_EMAIL", "X/Twitter email", non_interactive)
     _maybe_env(env_values, "CODQ_X_PASSWORD", "X/Twitter password", non_interactive, secret=True)
-    _maybe_env(env_values, "CODQ_X_TOTP_SECRET", "X/Twitter TOTP secret", non_interactive, secret=True)
+    _maybe_env(
+        env_values,
+        "CODQ_X_TOTP_SECRET",
+        "X/Twitter TOTP secret (optional; only if authenticator 2FA is enabled)",
+        non_interactive,
+        secret=True,
+    )
 
     telegram = _prompt("Enable Telegram notifications? [y/N]", "n", non_interactive)
     if telegram.lower().startswith("y"):

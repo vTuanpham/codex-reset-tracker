@@ -6,6 +6,7 @@ from typing import AsyncIterator
 
 from .config import ConfigError, TwitterConfig
 from .models import TweetRecord
+from .twikit_compat import patch_twikit_client_transaction
 
 LOGGER = logging.getLogger(__name__)
 
@@ -18,7 +19,9 @@ class TwikitTweetSource:
         self._user_ids: dict[str, str] = {}
 
     async def connect(self) -> None:
+        patch_twikit_client_transaction()
         from twikit import Client
+        from twikit.errors import Forbidden
 
         self.config.cookies_file.parent.mkdir(parents=True, exist_ok=True)
         kwargs = {}
@@ -31,17 +34,21 @@ class TwikitTweetSource:
         if self.config.cookies_file.exists():
             self._client.load_cookies(str(self.config.cookies_file))
             LOGGER.info("loaded X/Twitter cookies from %s", self.config.cookies_file)
+            return
 
         username = self.config.username
         password = self.config.password
         if username and password:
-            await self._client.login(
-                auth_info_1=username,
-                auth_info_2=self.config.email,
-                password=password,
-                totp_secret=self.config.totp_secret,
-                cookies_file=str(self.config.cookies_file),
-            )
+            try:
+                await self._client.login(
+                    auth_info_1=username,
+                    auth_info_2=self.config.email,
+                    password=password,
+                    totp_secret=self.config.totp_secret,
+                    cookies_file=str(self.config.cookies_file),
+                )
+            except Forbidden as exc:
+                raise ConfigError(_forbidden_login_message(exc)) from exc
             LOGGER.info("authenticated X/Twitter client as configured user")
         elif not self.config.cookies_file.exists():
             raise ConfigError(
@@ -149,6 +156,18 @@ def _tweet_url(screen_name: str, tweet_id: str) -> str:
     if not screen_name or screen_name == "unknown":
         return f"https://x.com/i/web/status/{tweet_id}"
     return f"https://x.com/{screen_name}/status/{tweet_id}"
+
+
+def _forbidden_login_message(exc: Exception) -> str:
+    message = str(exc)
+    if "Cloudflare" in message or "been blocked" in message or "403" in message:
+        return (
+            "X/Twitter blocked the login request with Cloudflare. The Twikit parser "
+            "patch is working, but direct username/password login was blocked. "
+            "Use browser-authenticated cookies at data/x_cookies.json, or try again "
+            "from a network/session X does not block."
+        )
+    return f"X/Twitter login was forbidden: {exc}"
 
 
 def _safe_tweet_snapshot(tweet) -> dict[str, object]:

@@ -37,6 +37,13 @@ Edit `.env` if setup left credentials blank. You need either:
   `CODQ_X_TOTP_SECRET`
 - or an existing Twikit cookies file at `data/x_cookies.json`
 
+`CODQ_X_TOTP_SECRET` is only for X/Twitter accounts that have authenticator-app
+2FA enabled. Leave it blank if your account does not use TOTP-based 2FA.
+
+If X/Twitter blocks username/password login with Cloudflare, use a cookies file
+instead. When `data/x_cookies.json` exists, the tracker loads those cookies and
+skips a fresh login attempt.
+
 Check readiness:
 
 ```bash

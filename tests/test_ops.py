@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -33,43 +34,53 @@ class OpsTests(unittest.TestCase):
 
     def test_doctor_reports_missing_auth_after_basic_setup(self):
         with tempfile.TemporaryDirectory() as tmp:
+            previous_cwd = Path.cwd()
+            os.chdir(tmp)
             config_path = Path(tmp) / "config.json"
             env_path = Path(tmp) / ".env"
-            write_setup(
-                config_path=config_path,
-                env_path=env_path,
-                force=False,
-                non_interactive=True,
-            )
+            try:
+                write_setup(
+                    config_path=config_path,
+                    env_path=env_path,
+                    force=False,
+                    non_interactive=True,
+                )
 
-            with patch.dict("os.environ", {}, clear=True):
-                checks = doctor_checks(config_path, env_path)
-            by_name = {check.name: check for check in checks}
+                with patch.dict("os.environ", {}, clear=True):
+                    checks = doctor_checks(config_path, env_path)
+                by_name = {check.name: check for check in checks}
 
-            self.assertTrue(by_name["config"].ok)
-            self.assertTrue(by_name["env"].ok)
-            self.assertFalse(by_name["x-auth"].ok)
+                self.assertTrue(by_name["config"].ok)
+                self.assertTrue(by_name["env"].ok)
+                self.assertFalse(by_name["x-auth"].ok)
+            finally:
+                os.chdir(previous_cwd)
 
     def test_doctor_loads_custom_env_path_for_auth(self):
         with tempfile.TemporaryDirectory() as tmp:
+            previous_cwd = Path.cwd()
+            os.chdir(tmp)
             config_path = Path(tmp) / "config.json"
             env_path = Path(tmp) / "custom.env"
-            write_setup(
-                config_path=config_path,
-                env_path=env_path,
-                force=False,
-                non_interactive=True,
-            )
-            env_path.write_text(
-                'CODQ_X_USERNAME="user"\nCODQ_X_PASSWORD="pass"\n',
-                encoding="utf-8",
-            )
+            try:
+                write_setup(
+                    config_path=config_path,
+                    env_path=env_path,
+                    force=False,
+                    non_interactive=True,
+                )
+                env_path.write_text(
+                    'CODQ_X_USERNAME="user"\nCODQ_X_PASSWORD="pass"\n',
+                    encoding="utf-8",
+                )
 
-            with patch.dict("os.environ", {}, clear=True):
-                checks = doctor_checks(config_path, env_path)
-            by_name = {check.name: check for check in checks}
+                with patch.dict("os.environ", {}, clear=True):
+                    checks = doctor_checks(config_path, env_path)
+                by_name = {check.name: check for check in checks}
 
-            self.assertTrue(by_name["x-auth"].ok)
+                self.assertTrue(by_name["x-auth"].ok)
+            finally:
+                os.chdir(previous_cwd)
 
     def test_user_service_unit_runs_installed_package_module(self):
         unit = _unit_text(
