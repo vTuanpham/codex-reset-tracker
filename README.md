@@ -87,6 +87,12 @@ session.
 Desktop is asked first in the wizard. When running inside WSL, desktop
 notifications are forwarded to Windows through `powershell.exe`.
 
+Example alert outputs:
+
+| Telegram | Windows desktop |
+| --- | --- |
+| <img src="assets/telegram_noti_example.JPG" alt="Telegram notification example" width="420"> | <img src="assets/window_noti_example.JPG" alt="Windows desktop notification example" width="360"> |
+
 Telegram quick path:
 
 1. Message `@BotFather`.
