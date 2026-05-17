@@ -139,6 +139,7 @@ def tweet_to_record(tweet, source: str) -> TweetRecord:
         created_at=str(created_at) if created_at is not None else None,
         url=url,
         source=source,
+        raw=_safe_tweet_snapshot(tweet),
     )
 
 
@@ -148,3 +149,42 @@ def _tweet_url(screen_name: str, tweet_id: str) -> str:
     if not screen_name or screen_name == "unknown":
         return f"https://x.com/i/web/status/{tweet_id}"
     return f"https://x.com/{screen_name}/status/{tweet_id}"
+
+
+def _safe_tweet_snapshot(tweet) -> dict[str, object]:
+    fields = (
+        "id",
+        "text",
+        "full_text",
+        "created_at",
+        "created_at_datetime",
+        "lang",
+        "quote_count",
+        "reply_count",
+        "retweet_count",
+        "favorite_count",
+        "view_count",
+        "url",
+    )
+    payload: dict[str, object] = {}
+    for field in fields:
+        value = getattr(tweet, field, None)
+        if value is None:
+            continue
+        if isinstance(value, (str, int, float, bool)):
+            payload[field] = value
+        elif hasattr(value, "isoformat"):
+            payload[field] = value.isoformat()
+        else:
+            payload[field] = str(value)
+    user = getattr(tweet, "user", None)
+    if user is not None:
+        payload["user"] = {
+            "id": str(getattr(user, "id", "")),
+            "screen_name": str(
+                getattr(user, "screen_name", "")
+                or getattr(user, "username", "")
+            ),
+            "name": str(getattr(user, "name", "")),
+        }
+    return payload

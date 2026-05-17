@@ -1,4 +1,5 @@
 import asyncio
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -147,6 +148,46 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(summary.alerted, 0)
             self.assertEqual(notifier.matches, [])
             self.assertTrue(state.has_seen(tweet("old-unseen", "anything")))
+            state.close()
+
+    def test_diagnostic_dump_records_match_decision(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = StateStore(Path(tmp) / "state.sqlite3")
+            state.mark_seen(tweet("baseline", "already initialized"))
+            notifier = RecordingNotifier()
+            dump_path = Path(tmp) / "stream.jsonl"
+            config = AppConfig(
+                state_path=Path(tmp) / "state.sqlite3",
+                runtime_dir=Path(tmp) / "runtime",
+                polling=PollingConfig(accounts=("OpenAI",), search_queries=()),
+            )
+            tracker = QuotaResetTracker(
+                config,
+                source=FakeSource(
+                    [
+                        [
+                            tweet(
+                                "new",
+                                "Codex usage limits have been refreshed later today. Quota reset is rolling out.",
+                            )
+                        ]
+                    ]
+                ),
+                state=state,
+                notifier=notifier,
+                dump_stream_path=dump_path,
+            )
+
+            summary = asyncio.run(tracker.scan_once())
+            records = [
+                json.loads(line)
+                for line in dump_path.read_text(encoding="utf-8").splitlines()
+            ]
+
+            self.assertEqual(summary.alerted, 1)
+            self.assertEqual(records[0]["decision"], "alerted")
+            self.assertEqual(records[0]["tweet"]["id"], "new")
+            self.assertEqual(records[0]["match"]["reset_window"]["label"], "later today")
             state.close()
 
 

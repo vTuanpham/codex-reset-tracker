@@ -2,14 +2,27 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
 import shutil
+import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from .config import ConfigError, load_config
 from .models import TweetRecord
 from .notifiers import NotificationManager
+from .ops import (
+    OpsError,
+    daemon_start,
+    daemon_status,
+    daemon_stop,
+    install_user_service,
+    read_status,
+    service_action,
+    write_setup,
+)
 from .runner import QuotaResetTracker
 
 LOGGER = logging.getLogger(__name__)
@@ -26,15 +39,28 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "init-config":
             return init_config(args)
+        if args.command == "setup":
+            return setup(args)
         if args.command == "check":
             return asyncio.run(check(args))
+        if args.command == "debug-scan":
+            return asyncio.run(debug_scan(args))
         if args.command == "run":
             return asyncio.run(run(args))
+        if args.command == "status":
+            return status(args)
+        if args.command == "service":
+            return service(args)
+        if args.command == "daemon":
+            return daemon(args)
         if args.command == "test-notify":
             return asyncio.run(test_notify(args))
-    except ConfigError as exc:
+    except (ConfigError, OpsError) as exc:
         LOGGER.error("%s", exc)
         return 2
+    except subprocess.CalledProcessError as exc:
+        LOGGER.error("command failed with exit code %s: %s", exc.returncode, exc.cmd)
+        return exc.returncode
     except KeyboardInterrupt:
         LOGGER.info("stopped")
         return 130
@@ -50,11 +76,54 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--path", type=Path, default=Path("config.json"))
     init.add_argument("--force", action="store_true")
 
+    setup_cmd = subcommands.add_parser("setup", help="write config.json and .env")
+    setup_cmd.add_argument("--config", type=Path, default=Path("config.json"))
+    setup_cmd.add_argument("--env", type=Path, default=Path(".env"))
+    setup_cmd.add_argument("--force", action="store_true")
+    setup_cmd.add_argument("--non-interactive", action="store_true")
+
     check_cmd = subcommands.add_parser("check", help="run one scrape and notification pass")
     check_cmd.add_argument("--config", type=Path, default=Path("config.json"))
 
+    debug_scan = subcommands.add_parser(
+        "debug-scan",
+        help="run one diagnostic scan and dump tweet/match decisions to JSONL",
+    )
+    debug_scan.add_argument("--config", type=Path, default=Path("config.json"))
+    debug_scan.add_argument(
+        "--dump-stream",
+        type=Path,
+        default=Path("data/runtime/debug-scan.jsonl"),
+    )
+    debug_scan.add_argument("--query", action="append", default=[])
+    debug_scan.add_argument("--account", action="append", default=[])
+    debug_scan.add_argument("--fresh-only", action="store_true")
+    debug_scan.add_argument("--notify", action="store_true")
+    debug_scan.add_argument(
+        "--write-state",
+        action="store_true",
+        help="write seen/alerted rows to the configured production state DB",
+    )
+
     run_cmd = subcommands.add_parser("run", help="run continuously")
     run_cmd.add_argument("--config", type=Path, default=Path("config.json"))
+
+    status_cmd = subcommands.add_parser("status", help="show last tracker status")
+    status_cmd.add_argument("--config", type=Path, default=Path("config.json"))
+
+    service_cmd = subcommands.add_parser("service", help="manage user-level systemd service")
+    service_subcommands = service_cmd.add_subparsers(dest="service_command", required=True)
+    service_install = service_subcommands.add_parser("install")
+    service_install.add_argument("--config", type=Path, default=Path("config.json"))
+    service_install.add_argument("--force", action="store_true")
+    for command in ("start", "stop", "restart", "status", "logs", "uninstall"):
+        service_subcommands.add_parser(command)
+
+    daemon_cmd = subcommands.add_parser("daemon", help="manage portable background daemon fallback")
+    daemon_subcommands = daemon_cmd.add_subparsers(dest="daemon_command", required=True)
+    for command in ("start", "stop", "status", "logs"):
+        item = daemon_subcommands.add_parser(command)
+        item.add_argument("--config", type=Path, default=Path("config.json"))
 
     notify = subcommands.add_parser("test-notify", help="send a synthetic alert through configured channels")
     notify.add_argument("--config", type=Path, default=Path("config.json"))
@@ -63,6 +132,17 @@ def build_parser() -> argparse.ArgumentParser:
         default="Synthetic alert: Codex quota limits may have reset.",
     )
     return parser
+
+
+def setup(args) -> int:
+    config_path, env_path = write_setup(
+        config_path=args.config,
+        env_path=args.env,
+        force=args.force,
+        non_interactive=args.non_interactive,
+    )
+    LOGGER.info("wrote %s and %s", config_path, env_path)
+    return 0
 
 
 def init_config(args) -> int:
@@ -93,10 +173,87 @@ async def check(args) -> int:
     return 0
 
 
+async def debug_scan(args) -> int:
+    config = load_config(args.config)
+    config.data_dir.mkdir(parents=True, exist_ok=True)
+    if not args.write_state:
+        config.runtime_dir.mkdir(parents=True, exist_ok=True)
+        config = replace(config, state_path=config.runtime_dir / "debug-state.sqlite3")
+    if args.query or args.account:
+        config = replace(
+            config,
+            polling=replace(
+                config.polling,
+                search_queries=tuple(args.query) if args.query else config.polling.search_queries,
+                accounts=tuple(args.account) if args.account else config.polling.accounts,
+            ),
+        )
+    notifier = None if args.notify else DryRunNotifier()
+    tracker = QuotaResetTracker(
+        config,
+        notifier=notifier,
+        allow_historical=not args.fresh_only,
+        dump_stream_path=args.dump_stream,
+    )
+    await tracker.connect()
+    summary = await tracker.scan_once()
+    LOGGER.info(
+        "debug scan complete: scanned=%s matched=%s alerted=%s duplicates=%s dump=%s",
+        summary.scanned,
+        summary.matched,
+        summary.alerted,
+        summary.duplicates,
+        args.dump_stream,
+    )
+    return 0
+
+
 async def run(args) -> int:
     config = load_config(args.config)
     config.data_dir.mkdir(parents=True, exist_ok=True)
     await QuotaResetTracker(config).run_forever()
+    return 0
+
+
+def status(args) -> int:
+    payload = read_status(args.config)
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
+def service(args) -> int:
+    command = args.service_command
+    if command == "install":
+        path = install_user_service(args.config, force=args.force)
+        LOGGER.info("installed %s", path)
+    elif command == "uninstall":
+        service_action("disable")
+        unit_path = Path.home() / ".config/systemd/user/codex-reset-tracker.service"
+        unit_path.unlink(missing_ok=True)
+        subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
+        LOGGER.info("uninstalled user service")
+    else:
+        service_action(command)
+    return 0
+
+
+def daemon(args) -> int:
+    command = args.daemon_command
+    if command == "start":
+        path = daemon_start(args.config)
+        LOGGER.info("daemon started; pid file: %s", path)
+    elif command == "stop":
+        stopped = daemon_stop(args.config)
+        LOGGER.info("daemon %s", "stopping" if stopped else "was not running")
+    elif command == "status":
+        print(daemon_status(args.config))
+    elif command == "logs":
+        config = load_config(args.config)
+        log_path = config.runtime_dir / "tracker.log"
+        if log_path.exists():
+            print(log_path.read_text(encoding="utf-8")[-8000:])
+        else:
+            LOGGER.info("no daemon log found at %s", log_path)
     return 0
 
 
@@ -129,6 +286,16 @@ def config_to_match(config, tweet: TweetRecord):
         matched_patterns=("synthetic",),
         excerpt=tweet.text,
     )
+
+
+class DryRunNotifier:
+    async def send_match(self, match):
+        print(
+            "DRY-RUN MATCH "
+            f"@{match.tweet.author_username} {match.tweet.url}: {match.excerpt}",
+            flush=True,
+        )
+        return {"dry_run": {"ok": True}}
 
 
 if __name__ == "__main__":

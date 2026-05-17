@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import random
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from .config import AppConfig
 from .matcher import RegexMatcher
@@ -33,6 +35,8 @@ class QuotaResetTracker:
         source: TwikitTweetSource | None = None,
         state: StateStore | None = None,
         notifier: NotificationManager | None = None,
+        allow_historical: bool = False,
+        dump_stream_path: Path | None = None,
     ):
         self.config = config
         self.matcher = RegexMatcher(config.matching)
@@ -43,6 +47,11 @@ class QuotaResetTracker:
         self.state = state or StateStore(config.state_path)
         self.notifier = notifier or NotificationManager(config.notifications)
         self.started_at = datetime.now(timezone.utc)
+        self.allow_historical = allow_historical
+        self.dump_stream_path = dump_stream_path
+        if self.dump_stream_path is not None:
+            self.dump_stream_path.parent.mkdir(parents=True, exist_ok=True)
+            self.dump_stream_path.write_text("", encoding="utf-8")
 
     async def connect(self) -> None:
         await self.source.connect()
@@ -78,19 +87,23 @@ class QuotaResetTracker:
             scanned += 1
 
             if self.state.has_seen(tweet):
+                self._dump_tweet(tweet, decision="seen_duplicate")
                 duplicates += 1
                 continue
 
-            if bootstrap_seen_only:
+            if bootstrap_seen_only and not self.allow_historical:
+                self._dump_tweet(tweet, decision="baseline_seen")
                 self.state.mark_seen(tweet)
                 continue
 
-            if self._is_preexisting_tweet(tweet):
+            if not self.allow_historical and self._is_preexisting_tweet(tweet):
+                self._dump_tweet(tweet, decision="preexisting_suppressed")
                 self.state.mark_seen(tweet)
                 continue
 
             match = self.matcher.match(tweet)
             if match is None:
+                self._dump_tweet(tweet, decision="no_match")
                 self.state.mark_seen(tweet)
                 continue
             matched += 1
@@ -103,6 +116,7 @@ class QuotaResetTracker:
             )
 
             if self.state.was_alerted(match):
+                self._dump_tweet(tweet, decision="alert_duplicate", match=match)
                 duplicates += 1
                 self.state.mark_seen(tweet)
                 continue
@@ -114,9 +128,17 @@ class QuotaResetTracker:
             delivery = await self.notifier.send_match(match)
             self.state.mark_alerted(match, delivery)
             self.state.mark_seen(tweet)
+            self._dump_tweet(tweet, decision="alerted", match=match, delivery=delivery)
             alerted += 1
 
-        return ScanSummary(scanned=scanned, matched=matched, alerted=alerted, duplicates=duplicates)
+        summary = ScanSummary(
+            scanned=scanned,
+            matched=matched,
+            alerted=alerted,
+            duplicates=duplicates,
+        )
+        self._write_status(summary)
+        return summary
 
     async def _iter_tweets(self):
         polling = self.config.polling
@@ -147,6 +169,68 @@ class QuotaResetTracker:
             seconds=self.config.polling.new_tweet_grace_seconds
         )
         return created_at < cutoff
+
+    def _write_status(self, summary: ScanSummary) -> None:
+        self.config.runtime_dir.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "last_scan_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "summary": {
+                "scanned": summary.scanned,
+                "matched": summary.matched,
+                "alerted": summary.alerted,
+                "duplicates": summary.duplicates,
+            },
+        }
+        (self.config.runtime_dir / "status.json").write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+    def _dump_tweet(
+        self,
+        tweet: TweetRecord,
+        *,
+        decision: str,
+        match=None,
+        delivery: dict | None = None,
+    ) -> None:
+        if self.dump_stream_path is None:
+            return
+        payload = {
+            "decision": decision,
+            "tweet": {
+                "id": tweet.id,
+                "author_username": tweet.author_username,
+                "author_name": tweet.author_name,
+                "text": tweet.text,
+                "created_at": tweet.created_at,
+                "url": tweet.url,
+                "source": tweet.source,
+                "raw": tweet.raw,
+            },
+        }
+        if match is not None:
+            payload["match"] = {
+                "matched_patterns": list(match.matched_patterns),
+                "excerpt": match.excerpt,
+                "reset_window": None
+                if match.reset_window is None
+                else {
+                    "label": match.reset_window.label,
+                    "source_start_at": match.reset_window.source_start_at,
+                    "source_end_at": match.reset_window.source_end_at,
+                    "source_timezone": match.reset_window.source_timezone,
+                    "user_start_at": match.reset_window.user_start_at,
+                    "user_end_at": match.reset_window.user_end_at,
+                    "user_timezone": match.reset_window.user_timezone,
+                    "confidence": match.reset_window.confidence,
+                    "evidence": list(match.reset_window.evidence),
+                },
+            }
+        if delivery is not None:
+            payload["delivery"] = delivery
+        with self.dump_stream_path.open("a", encoding="utf-8") as file:
+            file.write(json.dumps(payload, sort_keys=True) + "\n")
 
 
 def _has_tweet_id(tweet: TweetRecord) -> bool:

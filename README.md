@@ -26,12 +26,7 @@ uv sync
 Copy the example config and keep secrets in environment variables:
 
 ```bash
-cp config.example.json config.json
-export CODQ_X_USERNAME="your_x_username"
-export CODQ_X_EMAIL="your_x_email@example.com"
-export CODQ_X_PASSWORD="your_x_password"
-export CODQ_TELEGRAM_BOT_TOKEN="123:token"
-export CODQ_TELEGRAM_CHAT_ID="123456789"
+uv run codex-reset-tracker setup
 ```
 
 Run one scan:
@@ -46,10 +41,44 @@ Run continuously:
 uv run codex-reset-tracker run --config config.json
 ```
 
+Install as a user-level background service:
+
+```bash
+uv run codex-reset-tracker service install
+uv run codex-reset-tracker service start
+uv run codex-reset-tracker service status
+uv run codex-reset-tracker service logs
+```
+
+If your environment does not support `systemd --user`, use the portable daemon
+fallback:
+
+```bash
+uv run codex-reset-tracker daemon start
+uv run codex-reset-tracker daemon status
+uv run codex-reset-tracker daemon logs
+```
+
+Show the last successful scan summary:
+
+```bash
+uv run codex-reset-tracker status --config config.json
+```
+
 Send a test alert without scraping X/Twitter:
 
 ```bash
 uv run codex-reset-tracker test-notify --config config.json
+```
+
+Run a historical diagnostic scan and dump the normalized tweet stream plus match
+decisions without sending real notifications or touching the production state DB:
+
+```bash
+uv run codex-reset-tracker debug-scan \
+  --config config.json \
+  --query '(codex OR "ChatGPT Codex") (quota OR limit OR cap) (reset OR refreshed OR "later today")' \
+  --dump-stream data/runtime/debug-scan.jsonl
 ```
 
 Run local tests:
@@ -118,3 +147,4 @@ minutes`, and simple `at 5pm` style times.
   tweets edited later.
 - Desktop notification uses `notify-send` on Linux, `osascript` on macOS, and a
   best-effort PowerShell popup on Windows.
+- Secrets are loaded automatically from `.env` next to `config.json`.

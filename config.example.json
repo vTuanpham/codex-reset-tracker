@@ -1,6 +1,7 @@
 {
   "data_dir": "data",
   "state_path": "data/state.sqlite3",
+  "runtime_dir": "data/runtime",
   "local_timezone": "Asia/Saigon",
   "time": {
     "user_timezone": "Asia/Saigon",

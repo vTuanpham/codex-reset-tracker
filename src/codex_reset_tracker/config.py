@@ -110,6 +110,7 @@ class NotificationsConfig:
 class AppConfig:
     data_dir: Path = Path("data")
     state_path: Path = Path("data/state.sqlite3")
+    runtime_dir: Path = Path("data/runtime")
     local_timezone: str = "Asia/Saigon"
     time: TimeConfig = field(default_factory=TimeConfig)
     twitter: TwitterConfig = field(default_factory=TwitterConfig)
@@ -119,6 +120,7 @@ class AppConfig:
 
 
 def load_config(path: Path) -> AppConfig:
+    load_env(path)
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
@@ -135,6 +137,7 @@ def load_config(path: Path) -> AppConfig:
 def parse_config(raw: dict[str, Any]) -> AppConfig:
     data_dir = Path(_get(raw, "data_dir", "data"))
     state_path = Path(_get(raw, "state_path", str(data_dir / "state.sqlite3")))
+    runtime_dir = Path(_get(raw, "runtime_dir", str(data_dir / "runtime")))
 
     twitter_raw = _dict(raw.get("twitter"), "twitter")
     polling_raw = _dict(raw.get("polling"), "polling")
@@ -145,6 +148,7 @@ def parse_config(raw: dict[str, Any]) -> AppConfig:
     return AppConfig(
         data_dir=data_dir,
         state_path=state_path,
+        runtime_dir=runtime_dir,
         local_timezone=str(_get(raw, "local_timezone", "Asia/Saigon")),
         time=TimeConfig(
             user_timezone=str(
@@ -222,6 +226,17 @@ def parse_config(raw: dict[str, Any]) -> AppConfig:
             channels=_channels(notifications_raw.get("channels")),
         ),
     )
+
+
+def load_env(config_path: Path | None = None) -> None:
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+
+    if config_path is not None:
+        load_dotenv(config_path.parent / ".env", override=False)
+    load_dotenv(Path(".env"), override=False)
 
 
 def _get(raw: dict[str, Any], key: str, default: Any) -> Any:

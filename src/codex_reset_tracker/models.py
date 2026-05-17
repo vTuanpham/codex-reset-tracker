@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import field
 from hashlib import sha256
-from typing import Sequence
+from typing import Any, Sequence
 
 
 @dataclass(frozen=True)
@@ -14,6 +15,7 @@ class TweetRecord:
     created_at: str | None
     url: str
     source: str
+    raw: dict[str, Any] = field(default_factory=dict)
 
     @property
     def text_hash(self) -> str:

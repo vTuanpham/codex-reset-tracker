@@ -11,6 +11,7 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Codex Reset Tracker" }]
 dependencies = [
+    "python-dotenv>=1.0.1",
     "twikit>=2.3.1",
 ]
 
