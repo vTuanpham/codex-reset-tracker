@@ -45,6 +45,14 @@ def default_account_timezones() -> dict[str, str]:
     return {account.handle: account.timezone for account in DEFAULT_TRACKED_ACCOUNTS}
 
 
+def account_group_for_handle(handle: str) -> str | None:
+    normalized = normalize_handle(handle).lower()
+    for account in DEFAULT_TRACKED_ACCOUNTS:
+        if account.handle.lower() == normalized:
+            return account.group
+    return None
+
+
 def reset_search_queries(accounts: list[str] | tuple[str, ...]) -> tuple[str, ...]:
     return tuple(f"from:{normalize_handle(account)} reset" for account in accounts if normalize_handle(account))
 

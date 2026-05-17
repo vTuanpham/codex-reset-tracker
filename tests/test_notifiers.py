@@ -12,6 +12,7 @@ from codex_reset_tracker.notifiers import (
     desktop_notification_backend,
     desktop_notification_command,
     format_alert,
+    resolve_alert_title,
 )
 
 
@@ -45,6 +46,29 @@ class NotifierTests(unittest.TestCase):
             result = asyncio.run(manager.send_match(match()))
 
         self.assertEqual(result["stdout"], {"ok": True})
+
+    def test_resolve_alert_title_switches_to_claude_for_anthropic_accounts(self):
+        anthropic_tweet = TweetRecord(
+            id="anth-1",
+            author_username="claudeai",
+            author_name="Claude",
+            text="We reset rate limits today",
+            created_at="today",
+            url="https://x.com/claudeai/status/1",
+            source="test",
+        )
+        anthropic_match = TweetMatch(
+            tweet=anthropic_tweet,
+            matched_patterns=("reset",),
+            excerpt=anthropic_tweet.text,
+        )
+
+        title = resolve_alert_title("Potential Codex quota reset", anthropic_match)
+        self.assertEqual(title, "Potential Claude quota reset")
+
+    def test_resolve_alert_title_keeps_codex_for_openai_accounts(self):
+        title = resolve_alert_title("Potential Codex quota reset", match())
+        self.assertEqual(title, "Potential Codex quota reset")
 
     def test_wsl_desktop_notification_routes_to_windows_powershell(self):
         message = AlertMessage(

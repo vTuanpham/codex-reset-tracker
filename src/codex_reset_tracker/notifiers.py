@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import platform
+import re
 import shutil
 import smtplib
 import subprocess
@@ -16,6 +17,7 @@ from email.message import EmailMessage
 from pathlib import Path
 from typing import Any, Protocol
 
+from .accounts import account_group_for_handle
 from .config import NotificationsConfig
 from .models import TweetMatch
 
@@ -50,7 +52,7 @@ class NotificationManager:
         if not self.notifiers:
             raise NotificationError("No notification channels are enabled")
 
-        message = format_alert(self.config.title, match)
+        message = format_alert(resolve_alert_title(self.config.title, match), match)
         results: dict[str, Any] = {}
         successes = 0
         for notifier in self.notifiers:
@@ -135,6 +137,53 @@ def format_alert(title: str, match: TweetMatch) -> AlertMessage:
         },
     }
     return AlertMessage(title=title, body=body, url=tweet.url, payload=payload)
+
+
+def resolve_alert_title(base_title: str, match: TweetMatch) -> str:
+    product = _detect_product(match)
+    if product is None:
+        return base_title
+    if re.search(r"\b(?:codex|claude)\b", base_title, flags=re.IGNORECASE):
+        return re.sub(
+            r"\b(?:codex|claude)\b",
+            product,
+            base_title,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+    if re.search(r"\bquota\b", base_title, flags=re.IGNORECASE):
+        return re.sub(
+            r"\bquota\b",
+            f"{product} quota",
+            base_title,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+    return f"{base_title} ({product})"
+
+
+def _detect_product(match: TweetMatch) -> str | None:
+    tweet = match.tweet
+    group = account_group_for_handle(tweet.author_username)
+    if group is not None:
+        if group.startswith("anthropic"):
+            return "Claude"
+        if group.startswith("openai"):
+            return "Codex"
+
+    text = " ".join(
+        [
+            tweet.author_username,
+            tweet.author_name,
+            tweet.text,
+            match.excerpt,
+        ]
+    ).lower()
+    if "claude" in text or "anthropic" in text:
+        return "Claude"
+    if "codex" in text or "openai" in text or "chatgpt" in text:
+        return "Codex"
+    return None
 
 
 class StdoutNotifier:
