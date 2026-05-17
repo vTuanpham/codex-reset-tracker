@@ -30,6 +30,8 @@ def attach_reset_window(
     user_timezone_name: str,
     now: datetime | None = None,
 ) -> TweetMatch:
+    if now is None:
+        now = parse_created_at(match.tweet.created_at)
     window = estimate_reset_window(
         match.tweet.text,
         source_timezone_name=source_timezone_name,

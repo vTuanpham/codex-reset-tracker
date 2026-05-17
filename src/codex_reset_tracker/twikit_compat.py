@@ -60,6 +60,36 @@ def patch_twikit_client_transaction() -> bool:
     return True
 
 
+def patch_twikit_user_defaults() -> bool:
+    """Patch Twikit's User parser to tolerate optional profile fields missing."""
+    try:
+        from twikit import user as user_module
+    except Exception:
+        LOGGER.debug("twikit user module is unavailable", exc_info=True)
+        return False
+
+    user_class = getattr(user_module, "User", None)
+    if user_class is None:
+        return False
+    original_init = getattr(user_class, "__init__", None)
+    if getattr(original_init, "_codex_reset_tracker_patch", False):
+        return True
+
+    def patched_init(self, client, data):
+        data = _with_user_defaults(data)
+        return original_init(self, client, data)
+
+    patched_init._codex_reset_tracker_patch = True
+    user_class.__init__ = patched_init
+    LOGGER.debug("patched Twikit User.__init__ defaults")
+    return True
+
+
+def patch_twikit() -> None:
+    patch_twikit_client_transaction()
+    patch_twikit_user_defaults()
+
+
 def _resolve_on_demand_file_url(home_page_text: str) -> str | None:
     modern_match = ON_DEMAND_FILE_INDEX_REGEX.search(home_page_text)
     if modern_match:
@@ -79,3 +109,50 @@ def _resolve_on_demand_file_url(home_page_text: str) -> str | None:
 
 def _asset_url(filename: Any) -> str:
     return f"https://abs.twimg.com/responsive-web/client-web/ondemand.s.{filename}a.js"
+
+
+def _with_user_defaults(data: dict) -> dict:
+    copied = dict(data)
+    legacy = dict(copied.get("legacy") or {})
+    entities = dict(legacy.get("entities") or {})
+    description = dict(entities.get("description") or {})
+    description.setdefault("urls", [])
+    entities["description"] = description
+    entities.setdefault("url", {"urls": []})
+    legacy["entities"] = entities
+
+    defaults = {
+        "created_at": "",
+        "name": "",
+        "screen_name": "",
+        "profile_image_url_https": "",
+        "location": "",
+        "description": "",
+        "pinned_tweet_ids_str": [],
+        "verified": False,
+        "possibly_sensitive": False,
+        "can_dm": False,
+        "can_media_tag": False,
+        "want_retweets": False,
+        "default_profile": False,
+        "default_profile_image": False,
+        "has_custom_timelines": False,
+        "followers_count": 0,
+        "fast_followers_count": 0,
+        "normal_followers_count": 0,
+        "friends_count": 0,
+        "favourites_count": 0,
+        "listed_count": 0,
+        "media_count": 0,
+        "statuses_count": 0,
+        "is_translator": False,
+        "translator_type": "",
+        "withheld_in_countries": [],
+    }
+    for key, value in defaults.items():
+        legacy.setdefault(key, value)
+
+    copied["legacy"] = legacy
+    copied.setdefault("rest_id", "")
+    copied.setdefault("is_blue_verified", False)
+    return copied

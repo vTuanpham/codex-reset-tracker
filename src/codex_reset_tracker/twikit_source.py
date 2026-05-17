@@ -8,7 +8,7 @@ from typing import Any
 
 from .config import ConfigError, TwitterConfig
 from .models import TweetRecord
-from .twikit_compat import patch_twikit_client_transaction
+from .twikit_compat import patch_twikit
 
 LOGGER = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ class TwikitTweetSource:
         self._user_ids: dict[str, str] = {}
 
     async def connect(self) -> None:
-        patch_twikit_client_transaction()
+        patch_twikit()
         from twikit import Client
         from twikit.errors import Forbidden
 

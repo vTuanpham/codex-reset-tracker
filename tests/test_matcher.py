@@ -40,6 +40,13 @@ class RegexMatcherTests(unittest.TestCase):
 
         self.assertIsNone(result)
 
+    def test_matches_reset_propagation_issue_context(self):
+        matcher = RegexMatcher(MatchingConfig())
+
+        result = matcher.match(tweet("Seeing some issues with propagation of resets on some accounts, team is looking. Stay tuned."))
+
+        self.assertIsNotNone(result)
+
     def test_any_mode_can_match_single_pattern(self):
         matcher = RegexMatcher(
             MatchingConfig(

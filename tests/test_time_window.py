@@ -2,7 +2,8 @@ import unittest
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from codex_reset_tracker.time_window import estimate_reset_window, parse_created_at
+from codex_reset_tracker.models import TweetMatch, TweetRecord
+from codex_reset_tracker.time_window import attach_reset_window, estimate_reset_window, parse_created_at
 
 
 class TimeWindowTests(unittest.TestCase):
@@ -55,6 +56,28 @@ class TimeWindowTests(unittest.TestCase):
         parsed = parse_created_at("2026-05-16T09:30:00+07:00")
 
         self.assertEqual(parsed.isoformat(), "2026-05-16T02:30:00+00:00")
+
+    def test_attach_window_uses_tweet_created_at_as_phrase_anchor(self):
+        tweet = TweetRecord(
+            id="2055446089957036402",
+            author_username="thsottiaux",
+            author_name="Thomas",
+            text="I will reset usage limits this evening.",
+            created_at="Sat May 16 00:31:50 +0000 2026",
+            url="https://x.com/thsottiaux/status/2055446089957036402",
+            source="test",
+        )
+        match = TweetMatch(tweet=tweet, matched_patterns=("reset",), excerpt=tweet.text)
+
+        with_window = attach_reset_window(
+            match,
+            source_timezone_name="Europe/Paris",
+            user_timezone_name="Asia/Saigon",
+        )
+
+        self.assertIsNotNone(with_window.reset_window)
+        self.assertEqual(with_window.reset_window.source_start_at, "2026-05-16T17:00+02:00")
+        self.assertEqual(with_window.reset_window.user_start_at, "2026-05-16T22:00+07:00")
 
 
 if __name__ == "__main__":

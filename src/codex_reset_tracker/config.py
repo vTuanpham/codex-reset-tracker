@@ -89,9 +89,9 @@ class MatchingConfig:
     require_all_include_patterns: bool = True
     context_window_chars: int = 220
     include_patterns: tuple[str, ...] = (
-        r"\b(?:codex|chatgpt\s+codex|openai\s+codex)\b",
-        r"\b(?:quota|usage\s+limit|rate\s+limit|message\s+cap|cap|limits?)\b",
-        r"\b(?:reset|refreshed?|renew(?:ed)?|restore(?:d)?|increase[sd]?|bump(?:ed)?|rais(?:e|ed)|more\s+usage|additional\s+usage)\b",
+        r"\b(?:codex|chatgpt\s+codex|openai\s+codex|propagation\s+of\s+resets?)\b",
+        r"\b(?:quota|usage\s+limit|rate\s+limit|message\s+cap|cap|limits?|accounts?)\b",
+        r"\b(?:resets?|refreshed?|renew(?:ed)?|restore(?:d)?|increase[sd]?|bump(?:ed)?|rais(?:e|ed)|more\s+usage|additional\s+usage)\b",
     )
     exclude_patterns: tuple[str, ...] = (
         r"\b(?:password\s+reset|reset\s+password|factory\s+reset|hard\s+reset|account\s+recovery)\b",

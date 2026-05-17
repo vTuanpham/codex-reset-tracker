@@ -3,6 +3,7 @@ import unittest
 from codex_reset_tracker.twikit_compat import (
     _resolve_on_demand_file_url,
     patch_twikit_client_transaction,
+    _with_user_defaults,
 )
 from codex_reset_tracker.twikit_source import _forbidden_login_message
 
@@ -41,6 +42,24 @@ class TwikitCompatTests(unittest.TestCase):
         self.assertIn("Cloudflare", message)
         self.assertIn("data/x_cookies.json", message)
         self.assertIn("skips fresh login", message)
+
+    def test_user_defaults_fill_optional_profile_fields(self):
+        patched = _with_user_defaults(
+            {
+                "rest_id": "1",
+                "legacy": {
+                    "entities": {"description": {}},
+                    "screen_name": "thsottiaux",
+                    "name": "Thomas",
+                },
+            }
+        )
+
+        legacy = patched["legacy"]
+        self.assertEqual(legacy["entities"]["description"]["urls"], [])
+        self.assertEqual(legacy["pinned_tweet_ids_str"], [])
+        self.assertEqual(legacy["withheld_in_countries"], [])
+        self.assertFalse(patched["is_blue_verified"])
 
 
 if __name__ == "__main__":
