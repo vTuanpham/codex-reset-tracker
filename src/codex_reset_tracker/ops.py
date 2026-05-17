@@ -49,7 +49,8 @@ def write_setup(
     if not non_interactive:
         print(
             "X/Twitter auth: browser cookies at data/x_cookies.json are recommended. "
-            "Username/password login is a fallback and may be blocked by Cloudflare."
+            "Use Cookie-Editor for Chrome/Chromium to export x.com cookies as JSON. "
+            "Username/password login is only a fallback and may be blocked by Cloudflare."
         )
     env_values: dict[str, str] = {}
     _maybe_env(env_values, "CODQ_X_USERNAME", "X/Twitter username (fallback if no cookies)", non_interactive)
@@ -143,7 +144,11 @@ def doctor_checks(config_path: Path, env_path: Path) -> list[DoctorCheck]:
             else (
                 "X/Twitter username and password env vars are set"
                 if has_login
-                else "recommended: export browser cookies to data/x_cookies.json; fallback: set CODQ_X_USERNAME/CODQ_X_PASSWORD in .env"
+                else (
+                    "recommended: use Cookie-Editor to export x.com browser cookies "
+                    "to data/x_cookies.json; fallback: set CODQ_X_USERNAME/"
+                    "CODQ_X_PASSWORD in .env"
+                )
             ),
         )
     )

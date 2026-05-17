@@ -41,10 +41,39 @@ Edit `.env` if setup left credentials blank. You need either:
 2FA enabled. Leave it blank if your account does not use TOTP-based 2FA.
 
 Cookies are strongly preferred because X/Twitter often blocks automated
-username/password login with Cloudflare. To use cookies, log into X in your
-browser, export cookies for `x.com` as JSON with a browser extension such as
-Cookie-Editor, and save them at `data/x_cookies.json`. When that file exists,
-the tracker loads cookies and skips a fresh login attempt.
+username/password login with Cloudflare. The recommended exporter is
+[Cookie-Editor](https://chromewebstore.google.com/detail/cookie-editor/ookdjilphngeeeghgngjabigmpepanpl?hl=en-US&utm_source=ext_sidebar).
+
+Cookie setup step by step:
+
+1. Install Cookie-Editor in Chrome, Chromium, Brave, Edge, or another compatible
+   browser.
+2. Open `https://x.com` in that browser.
+3. Log into the X/Twitter account you want the tracker to use.
+4. Click the Cookie-Editor extension icon while you are on `x.com`.
+5. Use Cookie-Editor's export action and choose/copy the JSON export.
+6. In this repo, create the data directory if needed:
+
+   ```bash
+   mkdir -p data
+   ```
+
+7. Save the exported JSON exactly as:
+
+   ```bash
+   data/x_cookies.json
+   ```
+
+8. Run:
+
+   ```bash
+   uv run codex-reset-tracker doctor
+   uv run codex-reset-tracker check
+   ```
+
+When `data/x_cookies.json` exists, the tracker loads cookies and skips a fresh
+username/password login attempt. Do not commit or share `data/x_cookies.json`;
+it can grant access to your X session.
 
 Check readiness:
 

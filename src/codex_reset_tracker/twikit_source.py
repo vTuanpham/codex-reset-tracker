@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from typing import AsyncIterator
+from typing import Any
 
 from .config import ConfigError, TwitterConfig
 from .models import TweetRecord
@@ -32,7 +34,7 @@ class TwikitTweetSource:
 
         self._client = Client(self.config.language, **kwargs)
         if self.config.cookies_file.exists():
-            self._client.load_cookies(str(self.config.cookies_file))
+            self._client.set_cookies(_load_cookie_mapping(self.config.cookies_file))
             LOGGER.info("loaded X/Twitter cookies from %s", self.config.cookies_file)
             return
 
@@ -62,12 +64,13 @@ class TwikitTweetSource:
         accounts: list[str] | tuple[str, ...],
         count: int,
     ) -> AsyncIterator[TweetRecord]:
-        client = self._require_client()
         for account in accounts:
             screen_name = normalize_handle(account)
             try:
-                user_id = await self._resolve_user_id(screen_name)
-                tweets = await client.get_user_tweets(user_id, "Tweets", count=count)
+                tweets = await self._search_latest(
+                    f"from:{screen_name}",
+                    count=count,
+                )
             except Exception:
                 LOGGER.exception("failed to fetch tweets for @%s", screen_name)
                 await asyncio.sleep(self.request_delay_seconds)
@@ -82,11 +85,9 @@ class TwikitTweetSource:
         queries: list[str] | tuple[str, ...],
         count: int,
     ) -> AsyncIterator[TweetRecord]:
-        client = self._require_client()
-        bounded_count = min(max(1, count), 20)
         for query in queries:
             try:
-                tweets = await client.search_tweet(query, "Latest", count=bounded_count)
+                tweets = await self._search_latest(query, count=count)
             except Exception:
                 LOGGER.exception("failed to search tweets for query: %s", query)
                 await asyncio.sleep(self.request_delay_seconds)
@@ -95,6 +96,11 @@ class TwikitTweetSource:
             for tweet in tweets:
                 yield tweet_to_record(tweet, source=f"search:{query}")
             await asyncio.sleep(self.request_delay_seconds)
+
+    async def _search_latest(self, query: str, count: int):
+        client = self._require_client()
+        bounded_count = min(max(1, count), 20)
+        return await client.search_tweet(query, "Latest", count=bounded_count)
 
     async def _resolve_user_id(self, screen_name: str) -> str:
         if screen_name in self._user_ids:
@@ -165,10 +171,59 @@ def _forbidden_login_message(exc: Exception) -> str:
             "X/Twitter blocked the login request with Cloudflare. The Twikit parser "
             "patch is working, but direct username/password login was blocked. "
             "Recommended fix: log into X in your browser, export x.com cookies as "
-            "JSON, save them at data/x_cookies.json, then rerun the command. "
+            "JSON with the Cookie-Editor browser extension, save them at "
+            "data/x_cookies.json, then rerun the command. "
             "When that file exists, the tracker skips fresh login."
         )
     return f"X/Twitter login was forbidden: {exc}"
+
+
+def _load_cookie_mapping(path) -> dict[str, str]:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ConfigError(f"Invalid cookie JSON at {path}: {exc}") from exc
+
+    cookies = _normalize_cookies(raw)
+    if not cookies:
+        raise ConfigError(
+            f"No usable cookies found in {path}. Expected either Twikit's "
+            "name/value mapping or a Cookie-Editor/browser export list with "
+            "name and value fields."
+        )
+    return cookies
+
+
+def _normalize_cookies(raw: Any) -> dict[str, str]:
+    if isinstance(raw, dict):
+        if isinstance(raw.get("cookies"), list):
+            return _normalize_cookie_list(raw["cookies"])
+        if all(isinstance(key, str) for key in raw):
+            return {str(key): str(value) for key, value in raw.items() if value is not None}
+        return {}
+    if isinstance(raw, list):
+        return _normalize_cookie_list(raw)
+    return {}
+
+
+def _normalize_cookie_list(items: list[Any]) -> dict[str, str]:
+    cookies: dict[str, str] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        value = item.get("value")
+        if not name or value is None:
+            continue
+        domain = str(item.get("domain", "")).lower()
+        if domain and not (
+            domain.endswith("x.com")
+            or domain.endswith("twitter.com")
+            or domain.endswith("twimg.com")
+        ):
+            continue
+        cookies[str(name)] = str(value)
+    return cookies
 
 
 def _safe_tweet_snapshot(tweet) -> dict[str, object]:
