@@ -40,6 +40,7 @@ class TwikitCompatTests(unittest.TestCase):
 
         self.assertIn("Cloudflare", message)
         self.assertIn("data/x_cookies.json", message)
+        self.assertIn("skips fresh login", message)
 
 
 if __name__ == "__main__":

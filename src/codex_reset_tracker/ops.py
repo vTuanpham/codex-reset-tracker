@@ -46,10 +46,15 @@ def write_setup(
         "stdout", {}
     )["enabled"] = True
 
+    if not non_interactive:
+        print(
+            "X/Twitter auth: browser cookies at data/x_cookies.json are recommended. "
+            "Username/password login is a fallback and may be blocked by Cloudflare."
+        )
     env_values: dict[str, str] = {}
-    _maybe_env(env_values, "CODQ_X_USERNAME", "X/Twitter username", non_interactive)
-    _maybe_env(env_values, "CODQ_X_EMAIL", "X/Twitter email", non_interactive)
-    _maybe_env(env_values, "CODQ_X_PASSWORD", "X/Twitter password", non_interactive, secret=True)
+    _maybe_env(env_values, "CODQ_X_USERNAME", "X/Twitter username (fallback if no cookies)", non_interactive)
+    _maybe_env(env_values, "CODQ_X_EMAIL", "X/Twitter email (optional fallback login aid)", non_interactive)
+    _maybe_env(env_values, "CODQ_X_PASSWORD", "X/Twitter password (fallback if no cookies)", non_interactive, secret=True)
     _maybe_env(
         env_values,
         "CODQ_X_TOTP_SECRET",
@@ -138,7 +143,7 @@ def doctor_checks(config_path: Path, env_path: Path) -> list[DoctorCheck]:
             else (
                 "X/Twitter username and password env vars are set"
                 if has_login
-                else "set CODQ_X_USERNAME/CODQ_X_PASSWORD in .env or provide data/x_cookies.json"
+                else "recommended: export browser cookies to data/x_cookies.json; fallback: set CODQ_X_USERNAME/CODQ_X_PASSWORD in .env"
             ),
         )
     )

@@ -53,6 +53,7 @@ class OpsTests(unittest.TestCase):
                 self.assertTrue(by_name["config"].ok)
                 self.assertTrue(by_name["env"].ok)
                 self.assertFalse(by_name["x-auth"].ok)
+                self.assertIn("data/x_cookies.json", by_name["x-auth"].detail)
             finally:
                 os.chdir(previous_cwd)
 

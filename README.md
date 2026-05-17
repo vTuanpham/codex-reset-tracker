@@ -33,16 +33,18 @@ uv run codex-reset-tracker setup
 
 Edit `.env` if setup left credentials blank. You need either:
 
-- `CODQ_X_USERNAME` and `CODQ_X_PASSWORD`, optionally `CODQ_X_EMAIL` and
-  `CODQ_X_TOTP_SECRET`
-- or an existing Twikit cookies file at `data/x_cookies.json`
+- recommended: an existing Twikit/browser cookies file at `data/x_cookies.json`
+- fallback: `CODQ_X_USERNAME` and `CODQ_X_PASSWORD`, optionally `CODQ_X_EMAIL`
+  and `CODQ_X_TOTP_SECRET`
 
 `CODQ_X_TOTP_SECRET` is only for X/Twitter accounts that have authenticator-app
 2FA enabled. Leave it blank if your account does not use TOTP-based 2FA.
 
-If X/Twitter blocks username/password login with Cloudflare, use a cookies file
-instead. When `data/x_cookies.json` exists, the tracker loads those cookies and
-skips a fresh login attempt.
+Cookies are strongly preferred because X/Twitter often blocks automated
+username/password login with Cloudflare. To use cookies, log into X in your
+browser, export cookies for `x.com` as JSON with a browser extension such as
+Cookie-Editor, and save them at `data/x_cookies.json`. When that file exists,
+the tracker loads cookies and skips a fresh login attempt.
 
 Check readiness:
 

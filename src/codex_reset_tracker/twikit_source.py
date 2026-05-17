@@ -164,8 +164,9 @@ def _forbidden_login_message(exc: Exception) -> str:
         return (
             "X/Twitter blocked the login request with Cloudflare. The Twikit parser "
             "patch is working, but direct username/password login was blocked. "
-            "Use browser-authenticated cookies at data/x_cookies.json, or try again "
-            "from a network/session X does not block."
+            "Recommended fix: log into X in your browser, export x.com cookies as "
+            "JSON, save them at data/x_cookies.json, then rerun the command. "
+            "When that file exists, the tracker skips fresh login."
         )
     return f"X/Twitter login was forbidden: {exc}"
 
