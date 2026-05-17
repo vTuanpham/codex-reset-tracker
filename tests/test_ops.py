@@ -16,6 +16,7 @@ from codex_reset_tracker.ops import (
     _validate_service_prereqs,
     doctor_checks,
     OpsError,
+    _windows_startup_task_xml,
     _unit_text,
     write_account_setup,
     write_notification_setup,
@@ -205,6 +206,22 @@ class OpsTests(unittest.TestCase):
         self.assertIn("WorkingDirectory=/tmp/codex-reset-tracker", unit)
         self.assertIn(".venv/bin/python -m codex_reset_tracker run", unit)
         self.assertIn("Restart=on-failure", unit)
+
+    def test_windows_startup_task_wakes_wsl_and_starts_service(self):
+        xml = _windows_startup_task_xml(
+            distro="Ubuntu",
+            linux_user="tuanpham",
+            project_dir=Path("/home/tuanpham/selfstudy-linux/codex-reset-tracker"),
+            config_path=Path("config.json"),
+        )
+
+        self.assertIn("<LogonTrigger>", xml)
+        self.assertIn("<SessionStateChangeTrigger>", xml)
+        self.assertIn("Microsoft-Windows-Power-Troubleshooter", xml)
+        self.assertIn("C:\\Windows\\System32\\wsl.exe", xml)
+        self.assertIn("-d Ubuntu", xml)
+        self.assertIn("-u tuanpham", xml)
+        self.assertIn("codex_reset_tracker service start", xml)
 
     def test_service_prereqs_require_uv_synced_venv(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -23,9 +23,12 @@ from .ops import (
     doctor_checks,
     install_default_accounts,
     install_user_service,
+    install_windows_startup_task,
     read_status,
     remove_account_config,
     service_action,
+    uninstall_windows_startup_task,
+    windows_startup_task_status,
     write_account_setup,
     write_notification_setup,
     write_setup,
@@ -66,6 +69,8 @@ def main(argv: list[str] | None = None) -> int:
             return status(args)
         if args.command == "service":
             return service(args)
+        if args.command == "windows-startup":
+            return windows_startup(args)
         if args.command == "daemon":
             return daemon(args)
         if args.command == "test-notify":
@@ -176,6 +181,24 @@ def build_parser() -> argparse.ArgumentParser:
     service_install.add_argument("--force", action="store_true")
     for command in ("start", "stop", "restart", "status", "logs", "uninstall"):
         service_subcommands.add_parser(command)
+
+    windows_startup_cmd = subcommands.add_parser(
+        "windows-startup",
+        help="manage a Windows Scheduled Task that wakes WSL and starts the service",
+    )
+    windows_startup_subcommands = windows_startup_cmd.add_subparsers(
+        dest="windows_startup_command",
+        required=True,
+    )
+    windows_startup_install = windows_startup_subcommands.add_parser("install")
+    windows_startup_install.add_argument("--config", type=Path, default=Path("config.json"))
+    windows_startup_install.add_argument("--task-name", default="CodexResetTracker")
+    windows_startup_install.add_argument("--distro", default=None)
+    windows_startup_install.add_argument("--linux-user", default=None)
+    windows_startup_install.add_argument("--force", action="store_true")
+    for command in ("status", "uninstall"):
+        item = windows_startup_subcommands.add_parser(command)
+        item.add_argument("--task-name", default="CodexResetTracker")
 
     daemon_cmd = subcommands.add_parser("daemon", help="manage portable background daemon fallback")
     daemon_subcommands = daemon_cmd.add_subparsers(dest="daemon_command", required=True)
@@ -356,6 +379,25 @@ def service(args) -> int:
         LOGGER.info("uninstalled user service")
     else:
         service_action(command)
+    return 0
+
+
+def windows_startup(args) -> int:
+    command = args.windows_startup_command
+    if command == "install":
+        task_name = install_windows_startup_task(
+            config_path=args.config,
+            task_name=args.task_name,
+            distro=args.distro,
+            linux_user=args.linux_user,
+            force=args.force,
+        )
+        LOGGER.info("installed Windows Scheduled Task %s", task_name)
+    elif command == "status":
+        print(windows_startup_task_status(args.task_name))
+    elif command == "uninstall":
+        task_name = uninstall_windows_startup_task(args.task_name)
+        LOGGER.info("uninstalled Windows Scheduled Task %s", task_name)
     return 0
 
 

@@ -156,6 +156,7 @@ Override your timezone only when needed:
 | Mode | Commands |
 | --- | --- |
 | systemd user service | `uv run codex-reset-tracker service install` then `uv run codex-reset-tracker service start` |
+| WSL auto-start from Windows | `uv run codex-reset-tracker windows-startup install --force` |
 | portable daemon | `uv run codex-reset-tracker daemon start` |
 | foreground | `uv run codex-reset-tracker run` |
 
@@ -164,10 +165,39 @@ Useful status/log commands:
 ```bash
 uv run codex-reset-tracker service status
 uv run codex-reset-tracker service logs
+uv run codex-reset-tracker windows-startup status
 uv run codex-reset-tracker daemon status
 uv run codex-reset-tracker daemon logs
 uv run codex-reset-tracker status
 ```
+
+### WSL Startup Behavior
+
+| Situation | What happens |
+| --- | --- |
+| WSL distro is already running, then Windows sleeps/wakes | the Linux service should resume with WSL |
+| Windows reboots or WSL was shut down | the Linux service waits until something starts the distro |
+| You open Ubuntu, Windows Terminal, VS Code Remote WSL, or run `wsl.exe` | WSL starts, then enabled systemd user units can run |
+| `windows-startup` task is installed | Windows starts WSL and asks the tracker service to start at logon, unlock, and wake |
+
+Recommended WSL setup:
+
+```bash
+uv run codex-reset-tracker service install
+uv run codex-reset-tracker service start
+uv run codex-reset-tracker windows-startup install --force
+uv run codex-reset-tracker windows-startup status
+```
+
+If your distro name is not auto-detected:
+
+```bash
+uv run codex-reset-tracker windows-startup install --distro Ubuntu --force
+```
+
+Microsoft documents that [`wsl.exe` can run a specific distro from Windows](https://learn.microsoft.com/en-us/windows/wsl/basic-commands)
+and that [WSL supports `systemd`](https://learn.microsoft.com/en-us/windows/wsl/systemd);
+this project uses both pieces for the Windows Scheduled Task bridge.
 
 ## Diagnostics
 

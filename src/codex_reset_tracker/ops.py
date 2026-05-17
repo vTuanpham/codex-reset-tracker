@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import getpass
+import html
 import json
 import os
 import signal
@@ -298,6 +299,78 @@ def service_action(action: str) -> None:
         )
         return
     _systemctl(action, _unit_name())
+
+
+def install_windows_startup_task(
+    *,
+    config_path: Path,
+    task_name: str,
+    distro: str | None = None,
+    linux_user: str | None = None,
+    force: bool = False,
+) -> str:
+    if not _is_wsl_environment():
+        raise OpsError("windows-startup is only available from inside WSL")
+    powershell = shutil.which("powershell.exe")
+    if not powershell:
+        raise OpsError("powershell.exe is unavailable; enable WSL Windows interop")
+
+    project_dir = Path.cwd()
+    _validate_service_prereqs(project_dir=project_dir, config_path=config_path)
+    if not _unit_path().exists():
+        raise OpsError("codex-reset-tracker.service is not installed; run `uv run codex-reset-tracker service install` first")
+    distro_name = distro or os.getenv("WSL_DISTRO_NAME")
+    if not distro_name:
+        raise OpsError("Could not detect WSL distro name; pass --distro")
+    user_name = linux_user or getpass.getuser()
+    xml = _windows_startup_task_xml(
+        distro=distro_name,
+        linux_user=user_name,
+        project_dir=project_dir,
+        config_path=config_path,
+    )
+    command = (
+        "$xml = @'\n"
+        f"{xml}\n"
+        "'@\n"
+        f"Register-ScheduledTask -TaskName { _powershell_quote(task_name) } -Xml $xml"
+        + (" -Force" if force else "")
+    )
+    subprocess.run(
+        [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+        check=True,
+    )
+    return task_name
+
+
+def uninstall_windows_startup_task(task_name: str) -> str:
+    powershell = shutil.which("powershell.exe")
+    if not powershell:
+        raise OpsError("powershell.exe is unavailable; enable WSL Windows interop")
+    command = f"Unregister-ScheduledTask -TaskName { _powershell_quote(task_name) } -Confirm:$false"
+    subprocess.run(
+        [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+        check=True,
+    )
+    return task_name
+
+
+def windows_startup_task_status(task_name: str) -> str:
+    powershell = shutil.which("powershell.exe")
+    if not powershell:
+        raise OpsError("powershell.exe is unavailable; enable WSL Windows interop")
+    command = (
+        f"$task = Get-ScheduledTask -TaskName { _powershell_quote(task_name) } -ErrorAction SilentlyContinue; "
+        "if ($null -eq $task) { 'not installed' } "
+        "else { \"installed state=$($task.State)\" }"
+    )
+    completed = subprocess.run(
+        [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return completed.stdout.strip()
 
 
 def daemon_start(config_path: Path) -> Path:
@@ -1072,6 +1145,87 @@ WantedBy=default.target
 """
 
 
+def _windows_startup_task_xml(
+    *,
+    distro: str,
+    linux_user: str,
+    project_dir: Path,
+    config_path: Path,
+) -> str:
+    linux_command = (
+        f"cd {sh_quote(str(project_dir))} "
+        '&& export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" '
+        f"&& {sh_quote(str(project_dir / '.venv/bin/python'))} "
+        "-m codex_reset_tracker service start"
+    )
+    arguments = subprocess.list2cmdline(
+        [
+            "-d",
+            distro,
+            "-u",
+            linux_user,
+            "--cd",
+            str(project_dir),
+            "--exec",
+            "/bin/sh",
+            "-lc",
+            linux_command,
+        ]
+    )
+    wake_subscription = (
+        "<QueryList>"
+        '<Query Id="0" Path="System">'
+        '<Select Path="System">'
+        "*[System[Provider[@Name='Microsoft-Windows-Power-Troubleshooter'] and EventID=1]]"
+        "</Select>"
+        "</Query>"
+        "</QueryList>"
+    )
+    return f"""<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>Start the Codex Reset Tracker WSL service after Windows logon, unlock, or wake.</Description>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+    </LogonTrigger>
+    <SessionStateChangeTrigger>
+      <Enabled>true</Enabled>
+      <StateChange>SessionUnlock</StateChange>
+    </SessionStateChangeTrigger>
+    <EventTrigger>
+      <Enabled>true</Enabled>
+      <Subscription>{html.escape(wake_subscription)}</Subscription>
+    </EventTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <ExecutionTimeLimit>PT10M</ExecutionTimeLimit>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>C:\\Windows\\System32\\wsl.exe</Command>
+      <Arguments>{html.escape(arguments)}</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+"""
+
+
 def _systemctl(*args: str) -> None:
     subprocess.run(["systemctl", "--user", *args], check=True)
 
@@ -1085,3 +1239,19 @@ def _pid_alive(pid_path: Path) -> bool:
     except (ValueError, ProcessLookupError):
         return False
     return True
+
+
+def _is_wsl_environment() -> bool:
+    try:
+        release = Path("/proc/sys/kernel/osrelease").read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return "microsoft" in release.lower() or "wsl" in release.lower()
+
+
+def _powershell_quote(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def sh_quote(value: str) -> str:
+    return "'" + value.replace("'", "'\"'\"'") + "'"
