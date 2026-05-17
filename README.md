@@ -246,7 +246,7 @@ uv run python -m unittest discover -s tests
 | Topic | Detail |
 | --- | --- |
 | Fresh tweets | first scan baselines visible tweets unless `alert_on_first_scan=true` |
-| Rate limits | default polling is 5 minutes plus jitter |
+| Rate limits | default polling is 20 minutes plus jitter |
 | Twikit patches | compatibility monkeypatch registry lives in `src/codex_reset_tracker/twikit_compat.py` |
 | State | SQLite tracks seen tweet ids and alerted text hashes |
 | Secrets | `.env`, `data/`, cookies, and local DBs are git-ignored |

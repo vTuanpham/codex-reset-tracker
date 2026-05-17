@@ -42,7 +42,7 @@
     "totp_secret_env": "CODQ_X_TOTP_SECRET"
   },
   "polling": {
-    "interval_seconds": 300,
+    "interval_seconds": 1200,
     "jitter_seconds": 45,
     "request_delay_seconds": 2.0,
     "alert_on_first_scan": false,

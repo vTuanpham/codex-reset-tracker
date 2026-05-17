@@ -59,7 +59,7 @@ class TimeConfig:
 
 @dataclass(frozen=True)
 class PollingConfig:
-    interval_seconds: int = 300
+    interval_seconds: int = 1200
     jitter_seconds: int = 45
     request_delay_seconds: float = 2.0
     alert_on_first_scan: bool = False
@@ -170,7 +170,7 @@ def parse_config(raw: dict[str, Any]) -> AppConfig:
             totp_secret_env=str(_get(twitter_raw, "totp_secret_env", "CODQ_X_TOTP_SECRET")),
         ),
         polling=PollingConfig(
-            interval_seconds=_positive_int(_get(polling_raw, "interval_seconds", 300), "polling.interval_seconds"),
+            interval_seconds=_positive_int(_get(polling_raw, "interval_seconds", 1200), "polling.interval_seconds"),
             jitter_seconds=_nonnegative_int(_get(polling_raw, "jitter_seconds", 45), "polling.jitter_seconds"),
             request_delay_seconds=_nonnegative_float(
                 _get(polling_raw, "request_delay_seconds", 2.0),
