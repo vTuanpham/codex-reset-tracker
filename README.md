@@ -150,21 +150,24 @@ Override your timezone only when needed:
 }
 ```
 
-## Background Run
+## Background Service
 
-| Mode | Commands |
-| --- | --- |
-| systemd user service | `uv run codex-reset-tracker service install` then `uv run codex-reset-tracker service start` |
-| portable daemon | `uv run codex-reset-tracker daemon start` |
-| foreground | `uv run codex-reset-tracker run` |
-
-Useful status/log commands:
+Use the service for normal background operation:
 
 ```bash
+uv run codex-reset-tracker service install
+uv run codex-reset-tracker service start
 uv run codex-reset-tracker service status
 uv run codex-reset-tracker service logs
-uv run codex-reset-tracker daemon status
-uv run codex-reset-tracker daemon logs
+```
+
+Use this for a normal Linux or WSL install. It runs through `systemd --user`,
+gets restart handling, and writes logs to the user journal.
+
+For one-off testing, run it in the foreground:
+
+```bash
+uv run codex-reset-tracker run
 uv run codex-reset-tracker status
 ```
 
@@ -180,6 +183,9 @@ uv run codex-reset-tracker windows-startup install --force
 uv run codex-reset-tracker windows-startup status
 ```
 
+The scheduled task wakes WSL and starts the `service` mode. It does not use the
+portable daemon path.
+
 If distro detection fails, set it explicitly:
 
 ```bash
@@ -189,6 +195,20 @@ uv run codex-reset-tracker windows-startup install --distro Ubuntu --force
 Microsoft documents that [`wsl.exe` can run a specific distro from Windows](https://learn.microsoft.com/en-us/windows/wsl/basic-commands)
 and that [WSL supports `systemd`](https://learn.microsoft.com/en-us/windows/wsl/systemd);
 this project uses both pieces for the Windows Scheduled Task bridge.
+
+### Daemon Fallback
+
+Use this only if `service install` fails because `systemd --user` is unavailable:
+
+```bash
+uv run codex-reset-tracker daemon start
+uv run codex-reset-tracker daemon status
+uv run codex-reset-tracker daemon logs
+```
+
+The daemon is just a detached local process with a pid file and log file under
+`data/runtime`. It is not an installed OS service and should not be run at the
+same time as `service`.
 
 ## Diagnostics
 

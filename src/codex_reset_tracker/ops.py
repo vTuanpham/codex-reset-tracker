@@ -154,7 +154,7 @@ def write_account_setup(
         print("\nNext CLI steps:")
         print("  1. Run: uv run codex-reset-tracker doctor")
         print("  2. Run: uv run codex-reset-tracker debug-scan --account <handle>")
-        print("  3. Restart the service or daemon if it is already running.")
+        print("  3. Restart whichever run mode is already active.")
     return config_path
 
 
@@ -955,11 +955,11 @@ def _print_next_steps(*, first_time: bool) -> None:
     else:
         print("  1. Run: uv run codex-reset-tracker doctor")
         print("  2. Run: uv run codex-reset-tracker test-notify")
-        print("  3. Restart the service or daemon if it is already running.")
+        print("  3. Restart whichever run mode is already active.")
     print("Background service:")
     print("  uv run codex-reset-tracker service install")
     print("  uv run codex-reset-tracker service start")
-    print("Portable fallback:")
+    print("Fallback only if service install fails:")
     print("  uv run codex-reset-tracker daemon start")
 
 

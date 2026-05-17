@@ -38,4 +38,7 @@ Next:
 Background service:
   uv run codex-reset-tracker service install
   uv run codex-reset-tracker service start
+
+Fallback only if service install fails:
+  uv run codex-reset-tracker daemon start
 EOF
