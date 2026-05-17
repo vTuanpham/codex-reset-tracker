@@ -4,8 +4,10 @@ import getpass
 import json
 import os
 import signal
+import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from .config import load_config
@@ -13,6 +15,13 @@ from .config import load_config
 
 class OpsError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class DoctorCheck:
+    name: str
+    ok: bool
+    detail: str
 
 
 def write_setup(
@@ -64,12 +73,80 @@ def write_setup(
     return config_path, env_path
 
 
+def doctor_checks(config_path: Path, env_path: Path) -> list[DoctorCheck]:
+    checks: list[DoctorCheck] = []
+    checks.append(
+        DoctorCheck(
+            "uv",
+            shutil.which("uv") is not None,
+            "uv is on PATH" if shutil.which("uv") else "install uv or run ./install.sh",
+        )
+    )
+    checks.append(
+        DoctorCheck(
+            "virtualenv",
+            _venv_python(Path.cwd()).exists(),
+            ".venv Python exists" if _venv_python(Path.cwd()).exists() else "run uv sync",
+        )
+    )
+    checks.append(
+        DoctorCheck(
+            "config",
+            config_path.exists(),
+            f"found {config_path}" if config_path.exists() else "run codex-reset-tracker setup",
+        )
+    )
+    checks.append(
+        DoctorCheck(
+            "env",
+            env_path.exists(),
+            f"found {env_path}" if env_path.exists() else "run codex-reset-tracker setup",
+        )
+    )
+
+    if not config_path.exists():
+        return checks
+
+    if env_path.exists():
+        try:
+            from dotenv import load_dotenv
+        except ImportError:
+            pass
+        else:
+            load_dotenv(env_path, override=False)
+    try:
+        config = load_config(config_path)
+    except Exception as exc:
+        checks.append(DoctorCheck("config-load", False, str(exc)))
+        return checks
+
+    checks.append(DoctorCheck("config-load", True, "config loaded"))
+    has_cookies = config.twitter.cookies_file.exists()
+    has_login = bool(config.twitter.username and config.twitter.password)
+    checks.append(
+        DoctorCheck(
+            "x-auth",
+            has_cookies or has_login,
+            f"cookies file exists at {config.twitter.cookies_file}"
+            if has_cookies
+            else (
+                "X/Twitter username and password env vars are set"
+                if has_login
+                else "set CODQ_X_USERNAME/CODQ_X_PASSWORD in .env or provide data/x_cookies.json"
+            ),
+        )
+    )
+    checks.extend(_notification_checks(config))
+    return checks
+
+
 def install_user_service(config_path: Path, *, force: bool) -> Path:
     unit_path = _unit_path()
     if unit_path.exists() and not force:
         raise OpsError(f"{unit_path} already exists; pass --force to overwrite")
 
     project_dir = Path.cwd()
+    _validate_service_prereqs(project_dir=project_dir, config_path=config_path)
     unit_path.parent.mkdir(parents=True, exist_ok=True)
     unit_path.write_text(
         _unit_text(project_dir=project_dir, config_path=config_path),
@@ -145,6 +222,85 @@ def read_status(config_path: Path) -> dict:
     if not path.exists():
         raise OpsError(f"No status file found at {path}")
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _notification_checks(config) -> list[DoctorCheck]:
+    channels = config.notifications.channels
+    checks: list[DoctorCheck] = []
+    enabled = [name for name, values in channels.items() if values.get("enabled")]
+    checks.append(
+        DoctorCheck(
+            "notifications",
+            bool(enabled),
+            "enabled: " + ", ".join(enabled) if enabled else "enable at least stdout, Telegram, email, webhook, or desktop",
+        )
+    )
+    if channels.get("telegram", {}).get("enabled"):
+        checks.append(
+            _env_pair_check(
+                "telegram-env",
+                channels["telegram"].get("bot_token_env", "CODQ_TELEGRAM_BOT_TOKEN"),
+                channels["telegram"].get("chat_id_env", "CODQ_TELEGRAM_CHAT_ID"),
+            )
+        )
+    if channels.get("webhook", {}).get("enabled"):
+        checks.append(
+            _env_check(
+                "webhook-env",
+                channels["webhook"].get("url_env", "CODQ_WEBHOOK_URL"),
+            )
+        )
+    if channels.get("email", {}).get("enabled"):
+        required = (
+            channels["email"].get("smtp_host_env", "CODQ_SMTP_HOST"),
+            channels["email"].get("from_env", "CODQ_EMAIL_FROM"),
+            channels["email"].get("to_env", "CODQ_EMAIL_TO"),
+        )
+        missing = [name for name in required if not os.getenv(str(name))]
+        checks.append(
+            DoctorCheck(
+                "email-env",
+                not missing,
+                "required email env vars are set"
+                if not missing
+                else "missing " + ", ".join(str(name) for name in missing),
+            )
+        )
+    return checks
+
+
+def _env_check(name: str, env_name: str) -> DoctorCheck:
+    return DoctorCheck(
+        name,
+        bool(os.getenv(str(env_name))),
+        f"{env_name} is set" if os.getenv(str(env_name)) else f"missing {env_name}",
+    )
+
+
+def _env_pair_check(name: str, first: str, second: str) -> DoctorCheck:
+    missing = [env_name for env_name in (first, second) if not os.getenv(str(env_name))]
+    return DoctorCheck(
+        name,
+        not missing,
+        "required env vars are set" if not missing else "missing " + ", ".join(str(item) for item in missing),
+    )
+
+
+def _validate_service_prereqs(*, project_dir: Path, config_path: Path) -> None:
+    if not shutil.which("systemctl"):
+        raise OpsError("systemctl is not installed; use codex-reset-tracker daemon start instead")
+    if not config_path.exists():
+        raise OpsError(f"{config_path} does not exist; run codex-reset-tracker setup first")
+    load_config(config_path)
+    python_path = _venv_python(project_dir)
+    if not python_path.exists():
+        raise OpsError(f"{python_path} does not exist; run ./install.sh or uv sync first")
+
+
+def _venv_python(project_dir: Path) -> Path:
+    if os.name == "nt":
+        return project_dir / ".venv/Scripts/python.exe"
+    return project_dir / ".venv/bin/python"
 
 
 def _prompt(label: str, default: str, non_interactive: bool, *, secret: bool = False) -> str:

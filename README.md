@@ -17,31 +17,56 @@ show an async client with cookie-backed login, tweet search, user lookup, and
 user timeline retrieval through `search_tweet`, `get_user_by_screen_name`, and
 `get_user_tweets`.
 
-## Install
+## Quickstart
 
 ```bash
-uv sync
+git clone https://github.com/vTuanpham/codex-reset-tracker.git
+cd codex-reset-tracker
+./install.sh
 ```
 
-Copy the example config and keep secrets in environment variables:
+Create `config.json` and `.env`:
 
 ```bash
 uv run codex-reset-tracker setup
 ```
 
-Run one scan:
+Edit `.env` if setup left credentials blank. You need either:
+
+- `CODQ_X_USERNAME` and `CODQ_X_PASSWORD`, optionally `CODQ_X_EMAIL` and
+  `CODQ_X_TOTP_SECRET`
+- or an existing Twikit cookies file at `data/x_cookies.json`
+
+Check readiness:
 
 ```bash
-uv run codex-reset-tracker check --config config.json
+uv run codex-reset-tracker doctor
 ```
 
-Run continuously:
+Optionally verify Twikit can authenticate:
 
 ```bash
-uv run codex-reset-tracker run --config config.json
+uv run codex-reset-tracker doctor --live-auth
 ```
 
-Install as a user-level background service:
+Test notifications without scraping X/Twitter:
+
+```bash
+uv run codex-reset-tracker test-notify
+```
+
+Run the first scan:
+
+```bash
+uv run codex-reset-tracker check
+```
+
+The first scan is a baseline pass by default. It records currently visible tweets
+without alerting. Leave it running after that to catch newly discovered tweets.
+
+## Background Run
+
+On Linux with user-level systemd:
 
 ```bash
 uv run codex-reset-tracker service install
@@ -50,8 +75,7 @@ uv run codex-reset-tracker service status
 uv run codex-reset-tracker service logs
 ```
 
-If your environment does not support `systemd --user`, use the portable daemon
-fallback:
+If `systemd --user` is unavailable, use the portable daemon fallback:
 
 ```bash
 uv run codex-reset-tracker daemon start
@@ -59,17 +83,19 @@ uv run codex-reset-tracker daemon status
 uv run codex-reset-tracker daemon logs
 ```
 
+Run in the foreground instead:
+
+```bash
+uv run codex-reset-tracker run
+```
+
 Show the last successful scan summary:
 
 ```bash
-uv run codex-reset-tracker status --config config.json
+uv run codex-reset-tracker status
 ```
 
-Send a test alert without scraping X/Twitter:
-
-```bash
-uv run codex-reset-tracker test-notify --config config.json
-```
+## Diagnostics
 
 Run a historical diagnostic scan and dump the normalized tweet stream plus match
 decisions without sending real notifications or touching the production state DB:

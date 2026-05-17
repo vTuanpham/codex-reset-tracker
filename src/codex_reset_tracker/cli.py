@@ -18,6 +18,7 @@ from .ops import (
     daemon_start,
     daemon_status,
     daemon_stop,
+    doctor_checks,
     install_user_service,
     read_status,
     service_action,
@@ -41,6 +42,8 @@ def main(argv: list[str] | None = None) -> int:
             return init_config(args)
         if args.command == "setup":
             return setup(args)
+        if args.command == "doctor":
+            return asyncio.run(doctor(args))
         if args.command == "check":
             return asyncio.run(check(args))
         if args.command == "debug-scan":
@@ -81,6 +84,15 @@ def build_parser() -> argparse.ArgumentParser:
     setup_cmd.add_argument("--env", type=Path, default=Path(".env"))
     setup_cmd.add_argument("--force", action="store_true")
     setup_cmd.add_argument("--non-interactive", action="store_true")
+
+    doctor_cmd = subcommands.add_parser("doctor", help="check local readiness")
+    doctor_cmd.add_argument("--config", type=Path, default=Path("config.json"))
+    doctor_cmd.add_argument("--env", type=Path, default=Path(".env"))
+    doctor_cmd.add_argument(
+        "--live-auth",
+        action="store_true",
+        help="try connecting to X/Twitter with Twikit credentials or cookies",
+    )
 
     check_cmd = subcommands.add_parser("check", help="run one scrape and notification pass")
     check_cmd.add_argument("--config", type=Path, default=Path("config.json"))
@@ -142,6 +154,33 @@ def setup(args) -> int:
         non_interactive=args.non_interactive,
     )
     LOGGER.info("wrote %s and %s", config_path, env_path)
+    LOGGER.info("next: run `uv run codex-reset-tracker doctor`")
+    return 0
+
+
+async def doctor(args) -> int:
+    checks = doctor_checks(args.config, args.env)
+    failed = False
+    for check in checks:
+        status_text = "OK" if check.ok else "FAIL"
+        print(f"[{status_text}] {check.name}: {check.detail}")
+        failed = failed or not check.ok
+
+    if args.live_auth:
+        try:
+            config = load_config(args.config)
+            tracker = QuotaResetTracker(config)
+            await tracker.connect()
+        except Exception as exc:
+            print(f"[FAIL] live-auth: {exc}")
+            failed = True
+        else:
+            print("[OK] live-auth: Twikit connected")
+
+    if failed:
+        print("\nFix failed checks, then rerun `uv run codex-reset-tracker doctor`.")
+        return 2
+    print("\nReady. Next: `uv run codex-reset-tracker test-notify` then `uv run codex-reset-tracker check`.")
     return 0
 
 
