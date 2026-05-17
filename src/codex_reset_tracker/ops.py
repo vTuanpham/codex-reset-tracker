@@ -13,7 +13,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .config import load_config
+from .accounts import (
+    DEFAULT_TRACKED_ACCOUNTS,
+    normalize_handle,
+    reset_search_queries,
+    unique_handles,
+)
+from .config import detect_local_timezone, is_valid_timezone, load_config
 from .notifiers import desktop_notification_backend, desktop_notifications_available
 
 
@@ -47,11 +53,16 @@ def write_setup(
         _print_setup_header("First-time setup")
     _configure_timezone(raw_config, non_interactive)
     _configure_auth(env_values, non_interactive)
+    _configure_accounts(
+        raw_config,
+        non_interactive,
+        step_label="Step 3/5 - Tracked accounts",
+    )
     _configure_notifications(
         raw_config,
         env_values,
         non_interactive,
-        step_label="Step 3/4 - Notifications",
+        step_label="Step 4/5 - Notifications",
     )
 
     if not non_interactive:
@@ -60,7 +71,7 @@ def write_setup(
             env_path=env_path,
             raw_config=raw_config,
             non_interactive=non_interactive,
-            step_label="Step 4/4 - Confirm",
+            step_label="Step 5/5 - Confirm",
         )
 
     config_path.write_text(
@@ -115,6 +126,75 @@ def write_notification_setup(
     return config_path, env_path
 
 
+def write_account_setup(
+    *,
+    config_path: Path,
+    non_interactive: bool,
+) -> Path:
+    raw_config = _read_config_or_starter(config_path)
+    if not non_interactive:
+        _print_setup_header("Account setup")
+        print("This updates polling.accounts, reset search queries, and per-account source timezones.")
+        print("Alerts still require the tweet author to be in polling.accounts.")
+        _print_accounts(raw_config)
+
+    _configure_accounts(
+        raw_config,
+        non_interactive,
+        step_label="Step 1/2 - Tracked accounts",
+    )
+    if not non_interactive:
+        _print_accounts(raw_config)
+        if not _yes_no("Write account changes now?", True, non_interactive):
+            raise OpsError("account setup cancelled; no files were changed")
+
+    _write_config(config_path, raw_config)
+    if not non_interactive:
+        print("\nNext CLI steps:")
+        print("  1. Run: uv run codex-reset-tracker doctor")
+        print("  2. Run: uv run codex-reset-tracker debug-scan --account <handle>")
+        print("  3. Restart the service or daemon if it is already running.")
+    return config_path
+
+
+def account_summary(config_path: Path) -> str:
+    raw_config = _read_config_or_starter(config_path)
+    polling = raw_config.setdefault("polling", {})
+    time_config = raw_config.setdefault("time", {})
+    timezones = time_config.setdefault("account_timezones", {})
+    accounts = unique_handles(polling.get("accounts", []))
+    if not accounts:
+        return "No tracked accounts."
+    lines = ["Tracked accounts:"]
+    for handle in accounts:
+        lines.append(f"  @{handle}  source_timezone={timezones.get(handle, _account_timezone_default(handle))}")
+    return "\n".join(lines)
+
+
+def add_account_config(config_path: Path, handle: str, timezone_name: str | None = None) -> Path:
+    raw_config = _read_config_or_starter(config_path)
+    add_account_to_config(raw_config, handle, timezone_name or _account_timezone_default(handle))
+    _sync_reset_search_queries(raw_config)
+    _write_config(config_path, raw_config)
+    return config_path
+
+
+def remove_account_config(config_path: Path, handle: str) -> Path:
+    raw_config = _read_config_or_starter(config_path)
+    remove_account_from_config(raw_config, handle)
+    _sync_reset_search_queries(raw_config)
+    _write_config(config_path, raw_config)
+    return config_path
+
+
+def install_default_accounts(config_path: Path) -> Path:
+    raw_config = _read_config_or_starter(config_path)
+    _merge_default_accounts(raw_config)
+    _sync_reset_search_queries(raw_config)
+    _write_config(config_path, raw_config)
+    return config_path
+
+
 def doctor_checks(config_path: Path, env_path: Path) -> list[DoctorCheck]:
     checks: list[DoctorCheck] = []
     checks.append(
@@ -163,6 +243,13 @@ def doctor_checks(config_path: Path, env_path: Path) -> list[DoctorCheck]:
         return checks
 
     checks.append(DoctorCheck("config-load", True, "config loaded"))
+    checks.append(
+        DoctorCheck(
+            "timezone",
+            True,
+            f"user timezone resolves to {config.time.user_timezone}",
+        )
+    )
     has_cookies = config.twitter.cookies_file.exists()
     has_login = bool(config.twitter.username and config.twitter.password)
     checks.append(
@@ -383,6 +470,13 @@ def _starter_config() -> dict[str, Any]:
     return json.loads(source.read_text(encoding="utf-8"))
 
 
+def _write_config(config_path: Path, raw_config: dict[str, Any]) -> None:
+    config_path.write_text(
+        json.dumps(raw_config, indent=2, sort_keys=False) + "\n",
+        encoding="utf-8",
+    )
+
+
 def _read_config_or_starter(config_path: Path) -> dict[str, Any]:
     if not config_path.exists():
         raw_config = _starter_config()
@@ -414,6 +508,72 @@ def _ensure_notification_defaults(raw_config: dict[str, Any]) -> None:
             channel.setdefault(key, value)
 
 
+def _merge_default_accounts(raw_config: dict[str, Any]) -> None:
+    for account in DEFAULT_TRACKED_ACCOUNTS:
+        add_account_to_config(raw_config, account.handle, account.timezone)
+
+
+def add_account_to_config(
+    raw_config: dict[str, Any],
+    handle: str,
+    timezone_name: str,
+) -> None:
+    normalized = normalize_handle(handle)
+    if not normalized:
+        raise OpsError("Account handle cannot be blank")
+    if not is_valid_timezone(timezone_name):
+        raise OpsError(f"Invalid source timezone for @{normalized}: {timezone_name}")
+    polling = raw_config.setdefault("polling", {})
+    accounts = unique_handles([*polling.get("accounts", []), normalized])
+    polling["accounts"] = accounts
+    time_config = raw_config.setdefault("time", {})
+    account_timezones = time_config.setdefault("account_timezones", {})
+    account_timezones[normalized] = timezone_name
+
+
+def remove_account_from_config(raw_config: dict[str, Any], handle: str) -> None:
+    normalized = normalize_handle(handle)
+    key = normalized.lower()
+    polling = raw_config.setdefault("polling", {})
+    polling["accounts"] = [
+        item for item in unique_handles(polling.get("accounts", []))
+        if item.lower() != key
+    ]
+    time_config = raw_config.setdefault("time", {})
+    account_timezones = time_config.setdefault("account_timezones", {})
+    for stored in list(account_timezones):
+        if stored.lower() == key:
+            del account_timezones[stored]
+
+
+def _sync_reset_search_queries(raw_config: dict[str, Any]) -> None:
+    polling = raw_config.setdefault("polling", {})
+    accounts = unique_handles(polling.get("accounts", []))
+    polling["accounts"] = accounts
+    polling["search_queries"] = list(reset_search_queries(tuple(accounts)))
+
+
+def _account_timezone_default(handle: str) -> str:
+    normalized = normalize_handle(handle).lower()
+    for account in DEFAULT_TRACKED_ACCOUNTS:
+        if account.handle.lower() == normalized:
+            return account.timezone
+    return "America/Los_Angeles"
+
+
+def _print_accounts(raw_config: dict[str, Any]) -> None:
+    polling = raw_config.setdefault("polling", {})
+    time_config = raw_config.setdefault("time", {})
+    timezones = time_config.setdefault("account_timezones", {})
+    accounts = unique_handles(polling.get("accounts", []))
+    print("\nTracked accounts:")
+    if not accounts:
+        print("  none")
+        return
+    for handle in accounts:
+        print(f"  @{handle}  source_timezone={timezones.get(handle, _account_timezone_default(handle))}")
+
+
 def _print_setup_header(title: str) -> None:
     print()
     print(f"== {title} ==")
@@ -423,7 +583,11 @@ def _print_setup_header(title: str) -> None:
 
 def _configure_timezone(raw_config: dict[str, Any], non_interactive: bool) -> None:
     print("\nStep 1/4 - Local timezone") if not non_interactive else None
-    timezone_name = _prompt("Your timezone", "Asia/Saigon", non_interactive)
+    detected = detect_local_timezone()
+    if not non_interactive:
+        print(f"Detected local timezone: {detected}")
+        print("Use `auto` to keep detecting from the machine at runtime.")
+    timezone_name = _prompt("Your timezone override, or auto", "auto", non_interactive)
     raw_config["local_timezone"] = timezone_name
     raw_config.setdefault("time", {})["user_timezone"] = timezone_name
 
@@ -464,6 +628,40 @@ def _configure_auth(env_values: dict[str, str], non_interactive: bool) -> None:
         non_interactive,
         secret=True,
     )
+
+
+def _configure_accounts(
+    raw_config: dict[str, Any],
+    non_interactive: bool,
+    *,
+    step_label: str,
+) -> None:
+    if not non_interactive:
+        print(f"\n{step_label}")
+        print("Default watchlist includes official OpenAI/Anthropic/Claude accounts plus active developer-facing people.")
+        print("Only tweets from these trusted handles can alert, even when a search query returns other accounts.")
+    if _yes_no("Install or refresh the recommended OpenAI + Anthropic watchlist?", True, non_interactive):
+        _merge_default_accounts(raw_config)
+
+    while not non_interactive and _yes_no("Add another account manually?", False, non_interactive):
+        handle = normalize_handle(_prompt("X/Twitter handle", "", non_interactive))
+        if not handle:
+            continue
+        timezone_name = _prompt(
+            "Source timezone for this account",
+            _account_timezone_default(handle),
+            non_interactive,
+        )
+        add_account_to_config(raw_config, handle, timezone_name)
+
+    while not non_interactive and _yes_no("Remove an account?", False, non_interactive):
+        handle = normalize_handle(_prompt("Handle to remove", "", non_interactive))
+        if handle:
+            remove_account_from_config(raw_config, handle)
+
+    _sync_reset_search_queries(raw_config)
+    if not non_interactive:
+        _print_accounts(raw_config)
 
 
 def _configure_notifications(

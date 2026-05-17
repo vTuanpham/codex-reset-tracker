@@ -3,8 +3,12 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from .accounts import default_account_handles, default_account_timezones, reset_search_queries
 
 
 class ConfigError(ValueError):
@@ -41,18 +45,9 @@ class TwitterConfig:
 
 @dataclass(frozen=True)
 class TimeConfig:
-    user_timezone: str = "Asia/Saigon"
+    user_timezone: str = "auto"
     default_source_timezone: str = "America/Los_Angeles"
-    account_timezones: dict[str, str] = field(
-        default_factory=lambda: {
-            "sama": "America/Los_Angeles",
-            "thsottiaux": "Europe/Paris",
-            "OpenAI": "America/Los_Angeles",
-            "OpenAIDevs": "America/Los_Angeles",
-            "ChatGPTapp": "America/Los_Angeles",
-            "OpenAIStatus": "America/Los_Angeles",
-        }
-    )
+    account_timezones: dict[str, str] = field(default_factory=default_account_timezones)
 
     def source_timezone_for(self, username: str) -> str:
         normalized = username.strip().lstrip("@").lower()
@@ -73,14 +68,11 @@ class PollingConfig:
     search_count_per_query: int = 20
     max_alerts_per_scan: int = 10
     accounts: tuple[str, ...] = (
-        "sama",
-        "thsottiaux",
-        "OpenAI",
-        "OpenAIDevs",
-        "ChatGPTapp",
-        "OpenAIStatus",
+        *default_account_handles(),
     )
-    search_queries: tuple[str, ...] = ()
+    search_queries: tuple[str, ...] = (
+        *reset_search_queries(default_account_handles()),
+    )
 
 
 @dataclass(frozen=True)
@@ -109,7 +101,7 @@ class AppConfig:
     data_dir: Path = Path("data")
     state_path: Path = Path("data/state.sqlite3")
     runtime_dir: Path = Path("data/runtime")
-    local_timezone: str = "Asia/Saigon"
+    local_timezone: str = "auto"
     time: TimeConfig = field(default_factory=TimeConfig)
     twitter: TwitterConfig = field(default_factory=TwitterConfig)
     polling: PollingConfig = field(default_factory=PollingConfig)
@@ -143,19 +135,22 @@ def parse_config(raw: dict[str, Any]) -> AppConfig:
     matching_raw = _dict(raw.get("matching"), "matching")
     notifications_raw = _dict(raw.get("notifications"), "notifications")
 
+    local_timezone = _resolve_timezone_name(_get(raw, "local_timezone", "auto"))
+    user_timezone = _resolve_timezone_name(
+        _get(time_raw, "user_timezone", _get(raw, "local_timezone", "auto"))
+    )
+    accounts = _string_tuple(
+        _get(polling_raw, "accounts", list(PollingConfig().accounts)),
+        "polling.accounts",
+    )
+
     return AppConfig(
         data_dir=data_dir,
         state_path=state_path,
         runtime_dir=runtime_dir,
-        local_timezone=str(_get(raw, "local_timezone", "Asia/Saigon")),
+        local_timezone=local_timezone,
         time=TimeConfig(
-            user_timezone=str(
-                _get(
-                    time_raw,
-                    "user_timezone",
-                    _get(raw, "local_timezone", "Asia/Saigon"),
-                )
-            ),
+            user_timezone=user_timezone,
             default_source_timezone=str(
                 _get(time_raw, "default_source_timezone", "America/Los_Angeles")
             ),
@@ -198,8 +193,11 @@ def parse_config(raw: dict[str, Any]) -> AppConfig:
                 _get(polling_raw, "max_alerts_per_scan", 10),
                 "polling.max_alerts_per_scan",
             ),
-            accounts=_string_tuple(_get(polling_raw, "accounts", list(PollingConfig().accounts)), "polling.accounts"),
-            search_queries=_string_tuple(_get(polling_raw, "search_queries", []), "polling.search_queries"),
+            accounts=accounts,
+            search_queries=_string_tuple(
+                _get(polling_raw, "search_queries", list(reset_search_queries(accounts))),
+                "polling.search_queries",
+            ),
         ),
         matching=MatchingConfig(
             case_sensitive=bool(_get(matching_raw, "case_sensitive", False)),
@@ -235,6 +233,61 @@ def load_env(config_path: Path | None = None) -> None:
     if config_path is not None:
         load_dotenv(config_path.parent / ".env", override=False)
     load_dotenv(Path(".env"), override=False)
+
+
+def detect_local_timezone(default: str = "UTC") -> str:
+    env_timezone = os.getenv("TZ")
+    if _valid_timezone(env_timezone):
+        return str(env_timezone)
+
+    timezone_file = Path("/etc/timezone")
+    try:
+        timezone_name = timezone_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        timezone_name = ""
+    if _valid_timezone(timezone_name):
+        return timezone_name
+
+    localtime = Path("/etc/localtime")
+    try:
+        target = localtime.resolve()
+    except OSError:
+        target = Path()
+    marker = "/usr/share/zoneinfo/"
+    target_text = str(target)
+    if marker in target_text:
+        timezone_name = target_text.split(marker, 1)[1]
+        if _valid_timezone(timezone_name):
+            return timezone_name
+
+    tzinfo = datetime.now().astimezone().tzinfo
+    timezone_name = getattr(tzinfo, "key", None) or str(tzinfo)
+    if _valid_timezone(timezone_name):
+        return str(timezone_name)
+    return default
+
+
+def _resolve_timezone_name(value: Any) -> str:
+    timezone_name = str(value or "auto").strip()
+    if timezone_name.lower() == "auto":
+        return detect_local_timezone()
+    if not is_valid_timezone(timezone_name):
+        raise ConfigError(f"Invalid timezone: {timezone_name}")
+    return timezone_name
+
+
+def is_valid_timezone(value: str | None) -> bool:
+    return _valid_timezone(value)
+
+
+def _valid_timezone(value: str | None) -> bool:
+    if not value:
+        return False
+    try:
+        ZoneInfo(str(value))
+    except ZoneInfoNotFoundError:
+        return False
+    return True
 
 
 def _get(raw: dict[str, Any], key: str, default: Any) -> Any:

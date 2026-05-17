@@ -15,13 +15,18 @@ from .models import TweetRecord
 from .notifiers import NotificationError, NotificationManager
 from .ops import (
     OpsError,
+    account_summary,
+    add_account_config,
     daemon_start,
     daemon_status,
     daemon_stop,
     doctor_checks,
+    install_default_accounts,
     install_user_service,
     read_status,
+    remove_account_config,
     service_action,
+    write_account_setup,
     write_notification_setup,
     write_setup,
 )
@@ -45,6 +50,10 @@ def main(argv: list[str] | None = None) -> int:
             return setup(args)
         if args.command == "setup-notifications":
             return setup_notifications(args)
+        if args.command == "setup-accounts":
+            return setup_accounts(args)
+        if args.command == "accounts":
+            return accounts(args)
         if args.command == "doctor":
             return asyncio.run(doctor(args))
         if args.command == "check":
@@ -99,6 +108,28 @@ def build_parser() -> argparse.ArgumentParser:
     notification_setup.add_argument("--config", type=Path, default=Path("config.json"))
     notification_setup.add_argument("--env", type=Path, default=Path(".env"))
     notification_setup.add_argument("--non-interactive", action="store_true")
+
+    account_setup = subcommands.add_parser(
+        "setup-accounts",
+        help="guide tracked account setup and update config.json",
+    )
+    account_setup.add_argument("--config", type=Path, default=Path("config.json"))
+    account_setup.add_argument("--non-interactive", action="store_true")
+
+    accounts_cmd = subcommands.add_parser("accounts", help="list or edit tracked accounts")
+    accounts_cmd.add_argument("--config", type=Path, default=Path("config.json"))
+    accounts_subcommands = accounts_cmd.add_subparsers(dest="accounts_command", required=True)
+    accounts_subcommands.add_parser("list", help="list tracked accounts")
+    accounts_subcommands.add_parser("defaults", help="install or refresh recommended accounts")
+    add_account = accounts_subcommands.add_parser("add", help="add one tracked account")
+    add_account.add_argument("handle")
+    add_account.add_argument(
+        "--timezone",
+        default=None,
+        help="source timezone for this account, for example America/Los_Angeles",
+    )
+    remove_account = accounts_subcommands.add_parser("remove", help="remove one tracked account")
+    remove_account.add_argument("handle")
 
     doctor_cmd = subcommands.add_parser("doctor", help="check local readiness")
     doctor_cmd.add_argument("--config", type=Path, default=Path("config.json"))
@@ -181,6 +212,32 @@ def setup_notifications(args) -> int:
     )
     LOGGER.info("updated notification setup in %s and %s", config_path, env_path)
     LOGGER.info("next: run `uv run codex-reset-tracker test-notify`")
+    return 0
+
+
+def setup_accounts(args) -> int:
+    config_path = write_account_setup(
+        config_path=args.config,
+        non_interactive=args.non_interactive,
+    )
+    LOGGER.info("updated tracked accounts in %s", config_path)
+    LOGGER.info("next: run `uv run codex-reset-tracker doctor`")
+    return 0
+
+
+def accounts(args) -> int:
+    command = args.accounts_command
+    if command == "list":
+        print(account_summary(args.config))
+    elif command == "defaults":
+        install_default_accounts(args.config)
+        LOGGER.info("installed recommended tracked accounts in %s", args.config)
+    elif command == "add":
+        add_account_config(args.config, args.handle, args.timezone)
+        LOGGER.info("added @%s to %s", args.handle.lstrip("@"), args.config)
+    elif command == "remove":
+        remove_account_config(args.config, args.handle)
+        LOGGER.info("removed @%s from %s", args.handle.lstrip("@"), args.config)
     return 0
 
 

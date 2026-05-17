@@ -8,11 +8,16 @@ from pathlib import Path
 from unittest.mock import patch
 
 from codex_reset_tracker.ops import (
+    account_summary,
+    add_account_config,
     _extract_telegram_chat_id,
+    install_default_accounts,
+    remove_account_config,
     _validate_service_prereqs,
     doctor_checks,
     OpsError,
     _unit_text,
+    write_account_setup,
     write_notification_setup,
     write_setup,
 )
@@ -32,9 +37,48 @@ class OpsTests(unittest.TestCase):
             )
 
             config = json.loads(config_path.read_text(encoding="utf-8"))
-            self.assertEqual(config["time"]["user_timezone"], "Asia/Saigon")
+            self.assertEqual(config["time"]["user_timezone"], "auto")
+            self.assertIn("AnthropicAI", config["polling"]["accounts"])
+            self.assertIn("from:AnthropicAI reset", config["polling"]["search_queries"])
             self.assertIn("account_timezones", config["time"])
             self.assertIn("Add secrets here", env_path.read_text(encoding="utf-8"))
+
+    def test_account_setup_adds_defaults_and_syncs_search_queries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            write_account_setup(config_path=config_path, non_interactive=True)
+
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+
+            self.assertIn("OpenAIDevs", config["polling"]["accounts"])
+            self.assertIn("ClaudeDevs", config["polling"]["accounts"])
+            self.assertIn("bcherny", config["polling"]["accounts"])
+            self.assertEqual(
+                config["polling"]["search_queries"],
+                [f"from:{handle} reset" for handle in config["polling"]["accounts"]],
+            )
+
+    def test_account_add_remove_and_summary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+            install_default_accounts(config_path)
+
+            add_account_config(config_path, "@example_dev", "Europe/London")
+            summary = account_summary(config_path)
+            self.assertIn("@example_dev", summary)
+            self.assertIn("Europe/London", summary)
+
+            remove_account_config(config_path, "example_dev")
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            self.assertNotIn("example_dev", config["polling"]["accounts"])
+            self.assertNotIn("from:example_dev reset", config["polling"]["search_queries"])
+
+    def test_account_add_rejects_invalid_source_timezone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.json"
+
+            with self.assertRaisesRegex(OpsError, "Invalid source timezone"):
+                add_account_config(config_path, "example_dev", "Not/AZone")
 
     def test_notification_setup_guides_telegram_without_editing_json_by_hand(self):
         with tempfile.TemporaryDirectory() as tmp:
