@@ -7,10 +7,6 @@ from typing import Pattern
 from .config import MatchingConfig
 from .models import TweetMatch, TweetRecord
 
-STRONG_RESET_SIGNAL_PATTERNS = (
-    r"\bpropagation\s+of\s+resets?\s+on\s+.*\baccounts?\b",
-)
-
 
 @dataclass(frozen=True)
 class CompiledPattern:
@@ -25,10 +21,6 @@ class RegexMatcher:
         self._context_window_chars = config.context_window_chars
         self._includes = [CompiledPattern(raw, re.compile(raw, flags)) for raw in config.include_patterns]
         self._excludes = [CompiledPattern(raw, re.compile(raw, flags)) for raw in config.exclude_patterns]
-        self._strong_signals = [
-            CompiledPattern(raw, re.compile(raw, flags))
-            for raw in STRONG_RESET_SIGNAL_PATTERNS
-        ]
 
     def match(self, tweet: TweetRecord) -> TweetMatch | None:
         text = normalize_text(tweet.text)
@@ -37,18 +29,6 @@ class RegexMatcher:
 
         if any(pattern.pattern.search(text) for pattern in self._excludes):
             return None
-
-        strong_hits = [
-            pattern
-            for pattern in self._strong_signals
-            if pattern.pattern.search(text) is not None
-        ]
-        if strong_hits:
-            return TweetMatch(
-                tweet=tweet,
-                matched_patterns=tuple(pattern.raw for pattern in strong_hits),
-                excerpt=self._excerpt(text, strong_hits),
-            )
 
         include_hits = [
             pattern

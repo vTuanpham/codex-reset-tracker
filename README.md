@@ -227,7 +227,7 @@ decisions without sending real notifications or touching the production state DB
 ```bash
 uv run codex-reset-tracker debug-scan \
   --config config.json \
-  --query '(codex OR "ChatGPT Codex") (quota OR limit OR cap) (reset OR refreshed OR "later today")' \
+  --query 'from:thsottiaux reset' \
   --dump-stream data/runtime/debug-scan.jsonl
 ```
 
@@ -239,15 +239,17 @@ uv run python -m unittest discover -s tests
 
 ## Matching Strategy
 
-The default matcher requires all three contexts:
+The default matcher is intentionally simple: alert on tweets containing a
+`reset`, `resets`, `resetting`, or `resetted` keyword, but only when the tweet
+author is one of the trusted handles in `polling.accounts`.
 
-- Product: `codex`, `chatgpt codex`, or `openai codex`
-- Quota object: `quota`, `usage limit`, `rate limit`, `message cap`, or similar
-- Reset/increase action: `reset`, `refresh`, `renew`, `increase`, `bump`, or similar
+Search results are also author-gated. If a broad search returns a matching tweet
+from an unrelated account, the runner records it as `untrusted_author` and does
+not notify.
 
-It also excludes unrelated account/password/factory reset language. Tune
-`matching.include_patterns` and `matching.exclude_patterns` in `config.json`
-without changing code.
+The matcher still excludes obvious unrelated account/password/factory reset
+language. Tune `matching.include_patterns` and `matching.exclude_patterns` in
+`config.json` only if you intentionally want different text matching.
 
 ## Accounts And Searches
 

@@ -18,13 +18,13 @@ def tweet(text: str) -> TweetRecord:
 
 
 class RegexMatcherTests(unittest.TestCase):
-    def test_matches_codex_quota_reset_signal(self):
+    def test_matches_any_reset_keyword(self):
         matcher = RegexMatcher(MatchingConfig())
 
-        result = matcher.match(tweet("Codex usage limits have been refreshed. Quota reset is rolling out."))
+        result = matcher.match(tweet("Seeing some issues with propagation of resets on some accounts, team is looking. Stay tuned."))
 
         self.assertIsNotNone(result)
-        self.assertIn("Codex usage limits", result.excerpt)
+        self.assertIn("propagation of resets", result.excerpt)
 
     def test_rejects_unrelated_reset(self):
         matcher = RegexMatcher(MatchingConfig())
@@ -39,13 +39,6 @@ class RegexMatcherTests(unittest.TestCase):
         result = matcher.match(tweet("Codex had a great week."))
 
         self.assertIsNone(result)
-
-    def test_matches_reset_propagation_issue_context(self):
-        matcher = RegexMatcher(MatchingConfig())
-
-        result = matcher.match(tweet("Seeing some issues with propagation of resets on some accounts, team is looking. Stay tuned."))
-
-        self.assertIsNotNone(result)
 
     def test_any_mode_can_match_single_pattern(self):
         matcher = RegexMatcher(

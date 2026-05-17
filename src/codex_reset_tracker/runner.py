@@ -71,6 +71,7 @@ class QuotaResetTracker:
 
     async def scan_once(self) -> ScanSummary:
         seen_ids: set[str] = set()
+        trusted_authors = _trusted_authors(self.config.polling.accounts)
         scanned = 0
         matched = 0
         alerted = 0
@@ -85,6 +86,17 @@ class QuotaResetTracker:
                 continue
             seen_ids.add(tweet.id)
             scanned += 1
+
+            if not _is_trusted_author(tweet, trusted_authors):
+                LOGGER.info(
+                    "skipping tweet from untrusted author @%s source=%s url=%s",
+                    tweet.author_username,
+                    tweet.source,
+                    tweet.url,
+                )
+                self._dump_tweet(tweet, decision="untrusted_author")
+                self.state.mark_seen(tweet)
+                continue
 
             if self.state.has_seen(tweet):
                 self._dump_tweet(tweet, decision="seen_duplicate")
@@ -238,3 +250,15 @@ def _has_tweet_id(tweet: TweetRecord) -> bool:
         LOGGER.warning("skipping tweet with missing id from %s", tweet.source)
         return False
     return True
+
+
+def _trusted_authors(accounts: list[str] | tuple[str, ...]) -> set[str]:
+    return {_normalize_handle(account) for account in accounts if _normalize_handle(account)}
+
+
+def _is_trusted_author(tweet: TweetRecord, trusted_authors: set[str]) -> bool:
+    return _normalize_handle(tweet.author_username) in trusted_authors
+
+
+def _normalize_handle(value: str) -> str:
+    return value.strip().lstrip("@").lower()

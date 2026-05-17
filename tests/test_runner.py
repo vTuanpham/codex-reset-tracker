@@ -10,21 +10,27 @@ from codex_reset_tracker.runner import QuotaResetTracker
 from codex_reset_tracker.state import StateStore
 
 
-def tweet(tweet_id: str, text: str, created_at: str | None = None) -> TweetRecord:
+def tweet(
+    tweet_id: str,
+    text: str,
+    created_at: str | None = None,
+    author_username: str = "OpenAI",
+) -> TweetRecord:
     return TweetRecord(
         id=tweet_id,
-        author_username="OpenAI",
-        author_name="OpenAI",
+        author_username=author_username,
+        author_name=author_username,
         text=text,
         created_at=created_at,
-        url=f"https://x.com/OpenAI/status/{tweet_id}",
+        url=f"https://x.com/{author_username}/status/{tweet_id}",
         source="test",
     )
 
 
 class FakeSource:
-    def __init__(self, batches):
+    def __init__(self, batches, search_batches=None):
         self.batches = list(batches)
+        self.search_batches = list(search_batches or [[]])
 
     async def connect(self):
         return None
@@ -34,8 +40,8 @@ class FakeSource:
             yield item
 
     async def iter_search_tweets(self, queries, count):
-        if False:
-            yield None
+        for item in self.search_batches.pop(0):
+            yield item
 
 
 class RecordingNotifier:
@@ -188,6 +194,57 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(records[0]["decision"], "alerted")
             self.assertEqual(records[0]["tweet"]["id"], "new")
             self.assertEqual(records[0]["match"]["reset_window"]["label"], "later today")
+            state.close()
+
+    def test_matching_search_result_from_untrusted_author_is_suppressed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = StateStore(Path(tmp) / "state.sqlite3")
+            state.mark_seen(tweet("baseline", "already initialized"))
+            notifier = RecordingNotifier()
+            dump_path = Path(tmp) / "stream.jsonl"
+            config = AppConfig(
+                state_path=Path(tmp) / "state.sqlite3",
+                runtime_dir=Path(tmp) / "runtime",
+                polling=PollingConfig(
+                    accounts=("OpenAI",),
+                    search_queries=("reset",),
+                ),
+            )
+            tracker = QuotaResetTracker(
+                config,
+                source=FakeSource(
+                    [[]],
+                    search_batches=[
+                        [
+                            tweet(
+                                "stray",
+                                "Codex reset is happening.",
+                                author_username="not_openai",
+                            ),
+                            tweet(
+                                "trusted",
+                                "Reset is happening.",
+                                author_username="OpenAI",
+                            ),
+                        ]
+                    ],
+                ),
+                state=state,
+                notifier=notifier,
+                dump_stream_path=dump_path,
+            )
+
+            summary = asyncio.run(tracker.scan_once())
+            records = [
+                json.loads(line)
+                for line in dump_path.read_text(encoding="utf-8").splitlines()
+            ]
+
+            self.assertEqual(summary.scanned, 2)
+            self.assertEqual(summary.alerted, 1)
+            self.assertEqual(notifier.matches[0].tweet.id, "trusted")
+            self.assertEqual(records[0]["decision"], "untrusted_author")
+            self.assertEqual(records[0]["tweet"]["author_username"], "not_openai")
             state.close()
 
 

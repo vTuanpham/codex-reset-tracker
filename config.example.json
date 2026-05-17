@@ -43,12 +43,12 @@
       "OpenAIStatus"
     ],
     "search_queries": [
-      "(codex OR \"ChatGPT Codex\" OR \"OpenAI Codex\") (quota OR \"usage limit\" OR \"rate limit\" OR cap OR limits) (reset OR refresh OR renew OR increased OR raised)",
-      "from:sama (codex quota OR codex reset OR \"Codex usage\")",
-      "from:thsottiaux (codex quota OR codex reset OR \"Codex usage\")",
-      "from:OpenAI (codex quota OR codex reset OR \"Codex usage\")",
-      "from:OpenAIDevs (codex quota OR codex reset OR \"Codex usage\")",
-      "(codex OR \"ChatGPT Codex\") (quota OR limit OR cap) (\"later today\" OR evening OR tonight OR tomorrow OR soon OR shortly)"
+      "from:sama reset",
+      "from:thsottiaux reset",
+      "from:OpenAI reset",
+      "from:OpenAIDevs reset",
+      "from:ChatGPTapp reset",
+      "from:OpenAIStatus reset"
     ]
   },
   "matching": {
@@ -56,12 +56,10 @@
     "require_all_include_patterns": true,
     "context_window_chars": 220,
     "include_patterns": [
-      "\\b(?:codex|chatgpt\\s+codex|openai\\s+codex|propagation\\s+of\\s+resets?)\\b",
-      "\\b(?:quota|usage\\s+limit|rate\\s+limit|message\\s+cap|cap|limits?|accounts?)\\b",
-      "\\b(?:resets?|refreshed?|renew(?:ed)?|restore(?:d)?|increase[sd]?|bump(?:ed)?|rais(?:e|ed)|more\\s+usage|additional\\s+usage)\\b"
+      "\\breset(?:s|ting|ted)?\\b"
     ],
     "exclude_patterns": [
-      "\\b(?:password\\s+reset|reset\\s+password|factory\\s+reset|hard\\s+reset|account\\s+recovery)\\b"
+      "\\b(?:password\\s+reset|reset\\s+(?:your\\s+)?password|factory\\s+reset|hard\\s+reset|account\\s+recovery)\\b"
     ]
   },
   "notifications": {
