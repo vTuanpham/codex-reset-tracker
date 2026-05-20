@@ -18,6 +18,7 @@ from .twikit_source import TwikitTweetSource
 
 LOGGER = logging.getLogger(__name__)
 LAST_SCAN_AT_KEY = "last_scan_at"
+LAST_EFFECTIVE_SCAN_AT_KEY = "last_effective_scan_at"
 MAX_STARTUP_CATCHUP = timedelta(days=1)
 
 
@@ -208,9 +209,14 @@ class QuotaResetTracker:
             encoding="utf-8",
         )
         self.state.set_metadata(LAST_SCAN_AT_KEY, scan_at)
+        if summary.scanned > 0:
+            self.state.set_metadata(LAST_EFFECTIVE_SCAN_AT_KEY, scan_at)
 
     def _startup_catchup_cutoff(self, now: datetime) -> datetime | None:
-        last_scan = parse_created_at(self.state.get_metadata(LAST_SCAN_AT_KEY))
+        last_scan = parse_created_at(
+            self.state.get_metadata(LAST_EFFECTIVE_SCAN_AT_KEY)
+            or self.state.get_metadata(LAST_SCAN_AT_KEY)
+        )
         if last_scan is None:
             return None
         cutoff = max(last_scan, now - MAX_STARTUP_CATCHUP)

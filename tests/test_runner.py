@@ -8,6 +8,7 @@ from pathlib import Path
 from codex_reset_tracker.config import AppConfig, PollingConfig
 from codex_reset_tracker.models import TweetRecord
 from codex_reset_tracker.runner import QuotaResetTracker
+from codex_reset_tracker.runner import LAST_EFFECTIVE_SCAN_AT_KEY
 from codex_reset_tracker.runner import LAST_SCAN_AT_KEY
 from codex_reset_tracker.state import StateStore
 
@@ -223,6 +224,57 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(summary.alerted, 0)
             self.assertEqual(notifier.matches, [])
             self.assertTrue(state.has_seen(tweet("too-old", "anything")))
+            state.close()
+
+    def test_empty_scan_does_not_advance_effective_scan_watermark(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = StateStore(Path(tmp) / "state.sqlite3")
+            state.set_metadata(LAST_EFFECTIVE_SCAN_AT_KEY, "2026-05-20T04:00:00+00:00")
+            notifier = RecordingNotifier()
+            config = AppConfig(
+                state_path=Path(tmp) / "state.sqlite3",
+                runtime_dir=Path(tmp) / "runtime",
+                polling=PollingConfig(accounts=("OpenAI",), search_queries=()),
+            )
+            tracker = QuotaResetTracker(
+                config,
+                source=FakeSource([[]]),
+                state=state,
+                notifier=notifier,
+            )
+
+            summary = asyncio.run(tracker.scan_once())
+
+            self.assertEqual(summary.scanned, 0)
+            self.assertIsNotNone(state.get_metadata(LAST_SCAN_AT_KEY))
+            self.assertEqual(
+                state.get_metadata(LAST_EFFECTIVE_SCAN_AT_KEY),
+                "2026-05-20T04:00:00+00:00",
+            )
+            state.close()
+
+    def test_startup_catchup_prefers_effective_scan_watermark(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = StateStore(Path(tmp) / "state.sqlite3")
+            state.set_metadata(LAST_SCAN_AT_KEY, "2026-05-20T08:00:00+00:00")
+            state.set_metadata(LAST_EFFECTIVE_SCAN_AT_KEY, "2026-05-20T04:00:00+00:00")
+            notifier = RecordingNotifier()
+            config = AppConfig(
+                state_path=Path(tmp) / "state.sqlite3",
+                polling=PollingConfig(accounts=("OpenAI",), search_queries=()),
+            )
+            tracker = QuotaResetTracker(
+                config,
+                source=FakeSource([[]]),
+                state=state,
+                notifier=notifier,
+            )
+
+            cutoff = tracker._startup_catchup_cutoff(
+                datetime(2026, 5, 20, 9, 0, tzinfo=timezone.utc)
+            )
+
+            self.assertEqual(cutoff, datetime(2026, 5, 20, 4, 0, tzinfo=timezone.utc))
             state.close()
 
     def test_diagnostic_dump_records_match_decision(self):
