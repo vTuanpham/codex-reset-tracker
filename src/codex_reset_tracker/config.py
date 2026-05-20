@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from .accounts import default_account_handles, default_account_timezones, reset_search_queries
+from .accounts import default_account_handles, default_account_timezones
 
 
 class ConfigError(ValueError):
@@ -70,9 +70,7 @@ class PollingConfig:
     accounts: tuple[str, ...] = (
         *default_account_handles(),
     )
-    search_queries: tuple[str, ...] = (
-        *reset_search_queries(default_account_handles()),
-    )
+    search_queries: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -195,7 +193,7 @@ def parse_config(raw: dict[str, Any]) -> AppConfig:
             ),
             accounts=accounts,
             search_queries=_string_tuple(
-                _get(polling_raw, "search_queries", list(reset_search_queries(accounts))),
+                _get(polling_raw, "search_queries", []),
                 "polling.search_queries",
             ),
         ),

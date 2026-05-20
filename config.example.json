@@ -74,30 +74,7 @@
       "ch402",
       "bcherny"
     ],
-    "search_queries": [
-      "from:OpenAI reset",
-      "from:OpenAIDevs reset",
-      "from:ChatGPTapp reset",
-      "from:OpenAIStatus reset",
-      "from:sama reset",
-      "from:gdb reset",
-      "from:markchen90 reset",
-      "from:nickaturley reset",
-      "from:kevinweil reset",
-      "from:thsottiaux reset",
-      "from:embirico reset",
-      "from:hansonwng reset",
-      "from:katyhshi reset",
-      "from:AnthropicAI reset",
-      "from:claudeai reset",
-      "from:ClaudeDevs reset",
-      "from:DarioAmodei reset",
-      "from:DanielaAmodei reset",
-      "from:jackclarkSF reset",
-      "from:mikeyk reset",
-      "from:ch402 reset",
-      "from:bcherny reset"
-    ]
+    "search_queries": []
   },
   "matching": {
     "case_sensitive": false,

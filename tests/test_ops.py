@@ -40,11 +40,11 @@ class OpsTests(unittest.TestCase):
             config = json.loads(config_path.read_text(encoding="utf-8"))
             self.assertEqual(config["time"]["user_timezone"], "auto")
             self.assertIn("AnthropicAI", config["polling"]["accounts"])
-            self.assertIn("from:AnthropicAI reset", config["polling"]["search_queries"])
+            self.assertEqual(config["polling"]["search_queries"], [])
             self.assertIn("account_timezones", config["time"])
             self.assertIn("Add secrets here", env_path.read_text(encoding="utf-8"))
 
-    def test_account_setup_adds_defaults_and_syncs_search_queries(self):
+    def test_account_setup_adds_defaults_without_search_queries(self):
         with tempfile.TemporaryDirectory() as tmp:
             config_path = Path(tmp) / "config.json"
             write_account_setup(config_path=config_path, non_interactive=True)
@@ -54,10 +54,7 @@ class OpsTests(unittest.TestCase):
             self.assertIn("OpenAIDevs", config["polling"]["accounts"])
             self.assertIn("ClaudeDevs", config["polling"]["accounts"])
             self.assertIn("bcherny", config["polling"]["accounts"])
-            self.assertEqual(
-                config["polling"]["search_queries"],
-                [f"from:{handle} reset" for handle in config["polling"]["accounts"]],
-            )
+            self.assertEqual(config["polling"]["search_queries"], [])
 
     def test_account_add_remove_and_summary(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -72,7 +69,7 @@ class OpsTests(unittest.TestCase):
             remove_account_config(config_path, "example_dev")
             config = json.loads(config_path.read_text(encoding="utf-8"))
             self.assertNotIn("example_dev", config["polling"]["accounts"])
-            self.assertNotIn("from:example_dev reset", config["polling"]["search_queries"])
+            self.assertEqual(config["polling"]["search_queries"], [])
 
     def test_account_add_rejects_invalid_source_timezone(self):
         with tempfile.TemporaryDirectory() as tmp:

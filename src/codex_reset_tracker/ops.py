@@ -17,7 +17,6 @@ from typing import Any
 from .accounts import (
     DEFAULT_TRACKED_ACCOUNTS,
     normalize_handle,
-    reset_search_queries,
     unique_handles,
 )
 from .config import detect_local_timezone, is_valid_timezone, load_config
@@ -135,7 +134,7 @@ def write_account_setup(
     raw_config = _read_config_or_starter(config_path)
     if not non_interactive:
         _print_setup_header("Account setup")
-        print("This updates polling.accounts, reset search queries, and per-account source timezones.")
+        print("This updates polling.accounts and per-account source timezones.")
         print("Alerts still require the tweet author to be in polling.accounts.")
         _print_accounts(raw_config)
 
@@ -623,7 +622,7 @@ def _sync_reset_search_queries(raw_config: dict[str, Any]) -> None:
     polling = raw_config.setdefault("polling", {})
     accounts = unique_handles(polling.get("accounts", []))
     polling["accounts"] = accounts
-    polling["search_queries"] = list(reset_search_queries(tuple(accounts)))
+    polling.setdefault("search_queries", [])
 
 
 def _account_timezone_default(handle: str) -> str:
@@ -712,7 +711,7 @@ def _configure_accounts(
     if not non_interactive:
         print(f"\n{step_label}")
         print("Default watchlist includes official OpenAI/Anthropic/Claude accounts plus active developer-facing people.")
-        print("Only tweets from these trusted handles can alert, even when a search query returns other accounts.")
+        print("Only tweets from these trusted handles can alert.")
     if _yes_no("Install or refresh the recommended OpenAI + Anthropic watchlist?", True, non_interactive):
         _merge_default_accounts(raw_config)
 

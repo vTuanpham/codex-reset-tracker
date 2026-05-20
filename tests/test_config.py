@@ -22,13 +22,10 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, "Invalid timezone"):
             parse_config({"time": {"user_timezone": "Not/AZone"}})
 
-    def test_missing_search_queries_are_generated_from_accounts(self):
+    def test_missing_search_queries_default_empty(self):
         config = parse_config({"polling": {"accounts": ["OpenAI", "ClaudeDevs"]}})
 
-        self.assertEqual(
-            config.polling.search_queries,
-            ("from:OpenAI reset", "from:ClaudeDevs reset"),
-        )
+        self.assertEqual(config.polling.search_queries, ())
 
 
 if __name__ == "__main__":
