@@ -19,6 +19,7 @@ class TwikitTweetSource:
         self.request_delay_seconds = request_delay_seconds
         self._client = None
         self._user_ids: dict[str, str] = {}
+        self._search_unavailable = False
 
     async def connect(self) -> None:
         patch_twikit()
@@ -67,12 +68,14 @@ class TwikitTweetSource:
         for account in accounts:
             screen_name = normalize_handle(account)
             try:
-                tweets = await self._search_latest(
-                    f"from:{screen_name}",
-                    count=count,
+                tweets = await self._account_timeline(screen_name, count=count)
+            except Exception as exc:
+                LOGGER.warning(
+                    "failed to fetch timeline for @%s: %s",
+                    screen_name,
+                    exc,
+                    exc_info=LOGGER.isEnabledFor(logging.DEBUG),
                 )
-            except Exception:
-                LOGGER.exception("failed to fetch tweets for @%s", screen_name)
                 await asyncio.sleep(self.request_delay_seconds)
                 continue
 
@@ -86,10 +89,24 @@ class TwikitTweetSource:
         count: int,
     ) -> AsyncIterator[TweetRecord]:
         for query in queries:
+            if self._search_unavailable:
+                return
             try:
                 tweets = await self._search_latest(query, count=count)
-            except Exception:
-                LOGGER.exception("failed to search tweets for query: %s", query)
+            except Exception as exc:
+                if _is_twikit_not_found(exc):
+                    self._search_unavailable = True
+                    LOGGER.warning(
+                        "X/Twitter search endpoint returned 404; disabling search queries "
+                        "for this process and continuing with account timelines"
+                    )
+                    return
+                LOGGER.warning(
+                    "failed to search tweets for query %s: %s",
+                    query,
+                    exc,
+                    exc_info=LOGGER.isEnabledFor(logging.DEBUG),
+                )
                 await asyncio.sleep(self.request_delay_seconds)
                 continue
 
@@ -101,6 +118,12 @@ class TwikitTweetSource:
         client = self._require_client()
         bounded_count = min(max(1, count), 20)
         return await client.search_tweet(query, "Latest", count=bounded_count)
+
+    async def _account_timeline(self, screen_name: str, count: int):
+        client = self._require_client()
+        user_id = await self._resolve_user_id(screen_name)
+        bounded_count = min(max(1, count), 40)
+        return await client.get_user_tweets(user_id, "Replies", count=bounded_count)
 
     async def _resolve_user_id(self, screen_name: str) -> str:
         if screen_name in self._user_ids:
@@ -119,6 +142,14 @@ class TwikitTweetSource:
 
 def normalize_handle(value: str) -> str:
     return value.strip().lstrip("@")
+
+
+def _is_twikit_not_found(exc: Exception) -> bool:
+    try:
+        from twikit.errors import NotFound
+    except Exception:
+        return exc.__class__.__name__ == "NotFound"
+    return isinstance(exc, NotFound)
 
 
 def tweet_to_record(tweet, source: str) -> TweetRecord:

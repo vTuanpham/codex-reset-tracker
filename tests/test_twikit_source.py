@@ -3,19 +3,40 @@ import unittest
 
 from codex_reset_tracker.config import TwitterConfig
 from codex_reset_tracker.twikit_source import TwikitTweetSource
+from twikit.errors import NotFound
+
+
+class FakeUser:
+    id = "user-123"
 
 
 class FakeClient:
     def __init__(self):
         self.queries = []
+        self.screen_names = []
+        self.timeline_calls = []
+
+    async def get_user_by_screen_name(self, screen_name):
+        self.screen_names.append(screen_name)
+        return FakeUser()
+
+    async def get_user_tweets(self, user_id, tweet_type, count):
+        self.timeline_calls.append((user_id, tweet_type, count))
+        return []
 
     async def search_tweet(self, query, product, count):
         self.queries.append((query, product, count))
         return []
 
 
+class SearchNotFoundClient(FakeClient):
+    async def search_tweet(self, query, product, count):
+        self.queries.append((query, product, count))
+        raise NotFound(headers={})
+
+
 class TwikitSourceTests(unittest.TestCase):
-    def test_account_tweets_use_from_search_query(self):
+    def test_account_tweets_use_user_timeline_not_search(self):
         source = TwikitTweetSource(TwitterConfig(), request_delay_seconds=0)
         client = FakeClient()
         source._client = client
@@ -29,7 +50,29 @@ class TwikitSourceTests(unittest.TestCase):
         tweets = asyncio.run(collect())
 
         self.assertEqual(tweets, [])
-        self.assertEqual(client.queries, [("from:sama", "Latest", 20)])
+        self.assertEqual(client.screen_names, ["sama"])
+        self.assertEqual(client.timeline_calls, [("user-123", "Replies", 40)])
+        self.assertEqual(client.queries, [])
+
+    def test_search_404_disables_remaining_searches_without_failing_scan(self):
+        source = TwikitTweetSource(TwitterConfig(), request_delay_seconds=0)
+        client = SearchNotFoundClient()
+        source._client = client
+
+        async def collect():
+            return [
+                tweet
+                async for tweet in source.iter_search_tweets(
+                    ("from:OpenAI reset", "from:claudeai reset"),
+                    count=20,
+                )
+            ]
+
+        tweets = asyncio.run(collect())
+
+        self.assertEqual(tweets, [])
+        self.assertEqual(client.queries, [("from:OpenAI reset", "Latest", 20)])
+        self.assertTrue(source._search_unavailable)
 
 
 if __name__ == "__main__":
