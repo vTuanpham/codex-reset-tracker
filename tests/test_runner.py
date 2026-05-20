@@ -2,11 +2,13 @@ import asyncio
 import json
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 from codex_reset_tracker.config import AppConfig, PollingConfig
 from codex_reset_tracker.models import TweetRecord
 from codex_reset_tracker.runner import QuotaResetTracker
+from codex_reset_tracker.runner import LAST_SCAN_AT_KEY
 from codex_reset_tracker.state import StateStore
 
 
@@ -154,6 +156,73 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(summary.alerted, 0)
             self.assertEqual(notifier.matches, [])
             self.assertTrue(state.has_seen(tweet("old-unseen", "anything")))
+            state.close()
+
+    def test_startup_catches_up_since_last_scan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = StateStore(Path(tmp) / "state.sqlite3")
+            state.set_metadata(LAST_SCAN_AT_KEY, "2026-05-20T04:00:00+00:00")
+            notifier = RecordingNotifier()
+            config = AppConfig(
+                state_path=Path(tmp) / "state.sqlite3",
+                polling=PollingConfig(accounts=("OpenAI",), search_queries=()),
+            )
+            tracker = QuotaResetTracker(
+                config,
+                source=FakeSource(
+                    [
+                        [
+                            tweet(
+                                "during-downtime",
+                                "Codex quota reset happened while the service was stopped.",
+                                created_at="2026-05-20T06:00:00+00:00",
+                            )
+                        ]
+                    ]
+                ),
+                state=state,
+                notifier=notifier,
+            )
+            tracker.catchup_cutoff = datetime(2026, 5, 20, 4, 0, tzinfo=timezone.utc)
+
+            summary = asyncio.run(tracker.scan_once())
+
+            self.assertEqual(summary.alerted, 1)
+            self.assertEqual(notifier.matches[0].tweet.id, "during-downtime")
+            state.close()
+
+    def test_startup_catchup_is_capped_at_one_day(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = StateStore(Path(tmp) / "state.sqlite3")
+            state.set_metadata(LAST_SCAN_AT_KEY, "2026-05-18T00:00:00+00:00")
+            notifier = RecordingNotifier()
+            config = AppConfig(
+                state_path=Path(tmp) / "state.sqlite3",
+                polling=PollingConfig(accounts=("OpenAI",), search_queries=()),
+            )
+            tracker = QuotaResetTracker(
+                config,
+                source=FakeSource(
+                    [
+                        [
+                            tweet(
+                                "too-old",
+                                "Codex quota reset happened too far back.",
+                                created_at="2026-05-18T12:00:00+00:00",
+                            )
+                        ]
+                    ]
+                ),
+                state=state,
+                notifier=notifier,
+            )
+            tracker.catchup_cutoff = datetime(2026, 5, 19, 0, 0, tzinfo=timezone.utc)
+
+            summary = asyncio.run(tracker.scan_once())
+
+            self.assertEqual(summary.alerted, 0)
+            self.assertEqual(notifier.matches, [])
+            self.assertTrue(state.has_seen(tweet("too-old", "anything")))
             state.close()
 
     def test_diagnostic_dump_records_match_decision(self):

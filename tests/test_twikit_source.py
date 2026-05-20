@@ -68,11 +68,13 @@ class TwikitSourceTests(unittest.TestCase):
                 )
             ]
 
-        tweets = asyncio.run(collect())
+        with self.assertLogs("codex_reset_tracker.twikit_source", level="WARNING") as logs:
+            tweets = asyncio.run(collect())
 
         self.assertEqual(tweets, [])
         self.assertEqual(client.queries, [("from:OpenAI reset", "Latest", 20)])
         self.assertTrue(source._search_unavailable)
+        self.assertIn("search endpoint returned 404", logs.output[0])
 
 
 if __name__ == "__main__":

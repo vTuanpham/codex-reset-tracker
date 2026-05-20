@@ -17,6 +17,8 @@ from .time_window import attach_reset_window, parse_created_at
 from .twikit_source import TwikitTweetSource
 
 LOGGER = logging.getLogger(__name__)
+LAST_SCAN_AT_KEY = "last_scan_at"
+MAX_STARTUP_CATCHUP = timedelta(days=1)
 
 
 @dataclass(frozen=True)
@@ -47,6 +49,7 @@ class QuotaResetTracker:
         self.state = state or StateStore(config.state_path)
         self.notifier = notifier or NotificationManager(config.notifications)
         self.started_at = datetime.now(timezone.utc)
+        self.catchup_cutoff = self._startup_catchup_cutoff(self.started_at)
         self.allow_historical = allow_historical
         self.dump_stream_path = dump_stream_path
         if self.dump_stream_path is not None:
@@ -103,7 +106,11 @@ class QuotaResetTracker:
                 duplicates += 1
                 continue
 
-            if bootstrap_seen_only and not self.allow_historical:
+            if (
+                bootstrap_seen_only
+                and not self.allow_historical
+                and self.catchup_cutoff is None
+            ):
                 self._dump_tweet(tweet, decision="baseline_seen")
                 self.state.mark_seen(tweet)
                 continue
@@ -177,15 +184,18 @@ class QuotaResetTracker:
         created_at = parse_created_at(tweet.created_at)
         if created_at is None:
             return False
-        cutoff = self.started_at - timedelta(
-            seconds=self.config.polling.new_tweet_grace_seconds
-        )
+        cutoff = self.catchup_cutoff
+        if cutoff is None:
+            cutoff = self.started_at - timedelta(
+                seconds=self.config.polling.new_tweet_grace_seconds
+            )
         return created_at < cutoff
 
     def _write_status(self, summary: ScanSummary) -> None:
         self.config.runtime_dir.mkdir(parents=True, exist_ok=True)
+        scan_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         payload = {
-            "last_scan_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "last_scan_at": scan_at,
             "summary": {
                 "scanned": summary.scanned,
                 "matched": summary.matched,
@@ -197,6 +207,19 @@ class QuotaResetTracker:
             json.dumps(payload, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+        self.state.set_metadata(LAST_SCAN_AT_KEY, scan_at)
+
+    def _startup_catchup_cutoff(self, now: datetime) -> datetime | None:
+        last_scan = parse_created_at(self.state.get_metadata(LAST_SCAN_AT_KEY))
+        if last_scan is None:
+            return None
+        cutoff = max(last_scan, now - MAX_STARTUP_CATCHUP)
+        LOGGER.info(
+            "startup catch-up enabled from %s to %s",
+            cutoff.isoformat(timespec="seconds"),
+            now.isoformat(timespec="seconds"),
+        )
+        return cutoff
 
     def _dump_tweet(
         self,

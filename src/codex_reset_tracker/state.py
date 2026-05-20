@@ -28,6 +28,24 @@ class StateStore:
         row = self._db.execute("SELECT COUNT(*) AS count FROM seen_tweets").fetchone()
         return int(row["count"])
 
+    def get_metadata(self, key: str) -> str | None:
+        row = self._db.execute(
+            "SELECT value FROM metadata WHERE key = ?",
+            (key,),
+        ).fetchone()
+        return str(row["value"]) if row is not None else None
+
+    def set_metadata(self, key: str, value: str) -> None:
+        with self._db:
+            self._db.execute(
+                """
+                INSERT INTO metadata (key, value)
+                VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                (key, value),
+            )
+
     def has_seen(self, tweet: TweetRecord) -> bool:
         row = self._db.execute(
             "SELECT 1 FROM seen_tweets WHERE tweet_id = ?",
@@ -115,6 +133,14 @@ class StateStore:
                     excerpt TEXT NOT NULL,
                     delivered_at TEXT NOT NULL,
                     delivery_json TEXT NOT NULL
+                )
+                """
+            )
+            self._db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS metadata (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
                 )
                 """
             )
