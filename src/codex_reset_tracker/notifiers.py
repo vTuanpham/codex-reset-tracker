@@ -343,9 +343,21 @@ def desktop_notifications_available() -> bool:
 
 
 def _windows_powershell_executable(*, wsl: bool) -> str | None:
-    candidates = ("powershell.exe",) if wsl else ("powershell.exe", "powershell")
+    candidates = (
+        (
+            "powershell.exe",
+            "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+            "/mnt/c/Windows/SysWOW64/WindowsPowerShell/v1.0/powershell.exe",
+        )
+        if wsl
+        else ("powershell.exe", "powershell")
+    )
     for candidate in candidates:
-        if shutil.which(candidate):
+        resolved = shutil.which(candidate)
+        if resolved:
+            return resolved
+        path = Path(candidate)
+        if path.is_absolute() and path.exists():
             return candidate
     return None
 

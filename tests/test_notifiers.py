@@ -80,13 +80,34 @@ class NotifierTests(unittest.TestCase):
 
         with patch("codex_reset_tracker.notifiers.platform.system", return_value="Linux"):
             with patch.dict("os.environ", {"WSL_DISTRO_NAME": "Ubuntu"}):
-                with patch("codex_reset_tracker.notifiers.shutil.which", return_value="/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"):
+                with patch("codex_reset_tracker.notifiers.shutil.which", return_value="powershell.exe"):
                     command = desktop_notification_command(message)
                     backend = desktop_notification_backend()
 
         self.assertEqual(command[0], "powershell.exe")
         self.assertIn("-ExecutionPolicy", command)
         self.assertIn("System.Windows.Forms.NotifyIcon", command[-1])
+        self.assertEqual(backend, "wsl-windows")
+
+    def test_wsl_desktop_notification_uses_windows_path_when_service_path_is_minimal(self):
+        message = AlertMessage(
+            title="Codex reset",
+            body="Quota reset from WSL",
+            url="https://x.com/OpenAI/status/123",
+            payload={},
+        )
+
+        def fake_exists(self):
+            return str(self) == "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+
+        with patch("codex_reset_tracker.notifiers.platform.system", return_value="Linux"):
+            with patch.dict("os.environ", {"WSL_DISTRO_NAME": "Ubuntu"}):
+                with patch("codex_reset_tracker.notifiers.shutil.which", return_value=None):
+                    with patch("codex_reset_tracker.notifiers.Path.exists", fake_exists):
+                        command = desktop_notification_command(message)
+                        backend = desktop_notification_backend()
+
+        self.assertEqual(command[0], "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe")
         self.assertEqual(backend, "wsl-windows")
 
     def test_powershell_desktop_command_escapes_single_quotes(self):
