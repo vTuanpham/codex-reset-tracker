@@ -185,6 +185,46 @@ def _phrase_window(
     today = current.date()
     tomorrow = today + timedelta(days=1)
 
+    if re.search(r"\btomorrow\s+morning\b", lower):
+        return _window(
+            "tomorrow morning",
+            _at(tomorrow, time(6, 0), source_tz),
+            _at(tomorrow, time(12, 0), source_tz),
+            source_tz,
+            user_tz,
+            "medium",
+            ("tomorrow morning",),
+        )
+    if re.search(r"\btomorrow\s+afternoon\b", lower):
+        return _window(
+            "tomorrow afternoon",
+            _at(tomorrow, time(12, 0), source_tz),
+            _at(tomorrow, time(17, 0), source_tz),
+            source_tz,
+            user_tz,
+            "medium",
+            ("tomorrow afternoon",),
+        )
+    if re.search(r"\btomorrow\s+evening\b", lower):
+        return _window(
+            "tomorrow evening",
+            _at(tomorrow, time(17, 0), source_tz),
+            _at(tomorrow, time(21, 0), source_tz),
+            source_tz,
+            user_tz,
+            "medium",
+            ("tomorrow evening",),
+        )
+    if re.search(r"\btomorrow\s+night\b", lower):
+        return _window(
+            "tomorrow night",
+            _at(tomorrow, time(18, 0), source_tz),
+            _at(tomorrow + timedelta(days=1), time(0, 30), source_tz),
+            source_tz,
+            user_tz,
+            "medium",
+            ("tomorrow night",),
+        )
     if re.search(r"\blater\s+today\b", lower):
         return _window(
             "later today",

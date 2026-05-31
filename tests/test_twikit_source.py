@@ -10,6 +10,15 @@ class FakeUser:
     id = "user-123"
 
 
+class FakeTweet:
+    def __init__(self, tweet_id):
+        self.id = tweet_id
+        self.user = FakeUser()
+        self.full_text = "reset"
+        self.created_at = "2026-05-31T00:00:00+00:00"
+        self.url = f"https://x.com/sama/status/{tweet_id}"
+
+
 class FakeClient:
     def __init__(self):
         self.queries = []
@@ -27,6 +36,14 @@ class FakeClient:
     async def search_tweet(self, query, product, count):
         self.queries.append((query, product, count))
         return []
+
+
+class RepliesNotFoundClient(FakeClient):
+    async def get_user_tweets(self, user_id, tweet_type, count):
+        self.timeline_calls.append((user_id, tweet_type, count))
+        if tweet_type == "Replies":
+            raise NotFound(headers={})
+        return [FakeTweet("primary")]
 
 
 class SearchNotFoundClient(FakeClient):
@@ -51,8 +68,33 @@ class TwikitSourceTests(unittest.TestCase):
 
         self.assertEqual(tweets, [])
         self.assertEqual(client.screen_names, ["sama"])
-        self.assertEqual(client.timeline_calls, [("user-123", "Replies", 40)])
+        self.assertEqual(
+            client.timeline_calls,
+            [("user-123", "Tweets", 40), ("user-123", "Replies", 40)],
+        )
         self.assertEqual(client.queries, [])
+
+    def test_account_tweets_continue_when_replies_endpoint_404s(self):
+        source = TwikitTweetSource(TwitterConfig(), request_delay_seconds=0)
+        client = RepliesNotFoundClient()
+        source._client = client
+
+        async def collect():
+            return [
+                tweet
+                async for tweet in source.iter_account_tweets(("sama",), count=50)
+            ]
+
+        with self.assertLogs("codex_reset_tracker.twikit_source", level="WARNING") as logs:
+            tweets = asyncio.run(collect())
+
+        self.assertEqual([tweet.id for tweet in tweets], ["primary"])
+        self.assertEqual(
+            client.timeline_calls,
+            [("user-123", "Tweets", 40), ("user-123", "Replies", 40)],
+        )
+        self.assertTrue(source._replies_unavailable)
+        self.assertIn("replies timeline endpoint returned 404", logs.output[0])
 
     def test_search_404_disables_remaining_searches_without_failing_scan(self):
         source = TwikitTweetSource(TwitterConfig(), request_delay_seconds=0)

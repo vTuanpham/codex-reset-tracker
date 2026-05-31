@@ -5,7 +5,7 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-from codex_reset_tracker.config import AppConfig, PollingConfig
+from codex_reset_tracker.config import AppConfig, PollingConfig, TimeConfig
 from codex_reset_tracker.models import TweetRecord
 from codex_reset_tracker.runner import QuotaResetTracker
 from codex_reset_tracker.runner import LAST_EFFECTIVE_SCAN_AT_KEY
@@ -315,6 +315,46 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(records[0]["decision"], "alerted")
             self.assertEqual(records[0]["tweet"]["id"], "new")
             self.assertEqual(records[0]["match"]["reset_window"]["label"], "later today")
+            state.close()
+
+    def test_matching_profile_change_reprocesses_recent_seen_tweet(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = StateStore(Path(tmp) / "state.sqlite3")
+            seen_tweet = tweet(
+                "2060964284117782996",
+                "Five million users would agree. Resetting the limits tomorrow morning to celebrate.\n\n"
+                "Time to go /fast",
+                created_at="2026-05-31T05:59:10+00:00",
+                author_username="thsottiaux",
+            )
+            state.mark_seen(seen_tweet)
+            notifier = RecordingNotifier()
+            dump_path = Path(tmp) / "stream.jsonl"
+            config = AppConfig(
+                state_path=Path(tmp) / "state.sqlite3",
+                runtime_dir=Path(tmp) / "runtime",
+                time=TimeConfig(user_timezone="Asia/Saigon"),
+                polling=PollingConfig(accounts=("thsottiaux",), search_queries=()),
+            )
+            tracker = QuotaResetTracker(
+                config,
+                source=FakeSource([[seen_tweet]]),
+                state=state,
+                notifier=notifier,
+                dump_stream_path=dump_path,
+            )
+            tracker.reprocess_seen_cutoff = datetime(2026, 5, 30, tzinfo=timezone.utc)
+
+            summary = asyncio.run(tracker.scan_once())
+            records = [
+                json.loads(line)
+                for line in dump_path.read_text(encoding="utf-8").splitlines()
+            ]
+
+            self.assertEqual(summary.alerted, 1)
+            self.assertEqual(notifier.matches[0].tweet.id, "2060964284117782996")
+            self.assertEqual(notifier.matches[0].reset_window.label, "tomorrow morning")
+            self.assertEqual(records[0]["decision"], "reprocessed_alerted")
             state.close()
 
     def test_matching_search_result_from_untrusted_author_is_suppressed(self):

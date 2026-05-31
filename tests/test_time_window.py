@@ -38,6 +38,23 @@ class TimeWindowTests(unittest.TestCase):
         self.assertEqual(window.user_start_at, "2026-05-17T07:00+07:00")
         self.assertEqual(window.user_end_at, "2026-05-17T11:00+07:00")
 
+    def test_tomorrow_morning_maps_from_source_time_to_user_time(self):
+        now = datetime(2026, 5, 30, 22, 59, tzinfo=ZoneInfo("America/Los_Angeles"))
+
+        window = estimate_reset_window(
+            "Resetting the limits tomorrow morning to celebrate.",
+            source_timezone_name="America/Los_Angeles",
+            user_timezone_name="Asia/Saigon",
+            now=now,
+        )
+
+        self.assertIsNotNone(window)
+        self.assertEqual(window.label, "tomorrow morning")
+        self.assertEqual(window.source_start_at, "2026-05-31T06:00-07:00")
+        self.assertEqual(window.source_end_at, "2026-05-31T12:00-07:00")
+        self.assertEqual(window.user_start_at, "2026-05-31T20:00+07:00")
+        self.assertEqual(window.user_end_at, "2026-06-01T02:00+07:00")
+
     def test_relative_hours(self):
         now = datetime(2026, 5, 16, 9, 30, tzinfo=ZoneInfo("Asia/Saigon"))
 

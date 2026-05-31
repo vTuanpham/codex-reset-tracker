@@ -15,6 +15,13 @@ class ConfigError(ValueError):
     pass
 
 
+LEGACY_STRICT_INCLUDE_PATTERNS: tuple[str, ...] = (
+    r"\b(?:codex|chatgpt\s+codex|openai\s+codex)\b",
+    r"\b(?:quota|usage\s+limit|rate\s+limit|message\s+cap|cap|limits?)\b",
+    r"\b(?:reset|refreshed?|renew(?:ed)?|restore(?:d)?|increase[sd]?|bump(?:ed)?|rais(?:e|ed)|more\s+usage|additional\s+usage)\b",
+)
+
+
 @dataclass(frozen=True)
 class TwitterConfig:
     language: str = "en-US"
@@ -141,6 +148,15 @@ def parse_config(raw: dict[str, Any]) -> AppConfig:
         _get(polling_raw, "accounts", list(PollingConfig().accounts)),
         "polling.accounts",
     )
+    include_patterns = _string_tuple(
+        _get(matching_raw, "include_patterns", list(MatchingConfig().include_patterns)),
+        "matching.include_patterns",
+    )
+    require_all_include_patterns = bool(
+        _get(matching_raw, "require_all_include_patterns", True)
+    )
+    if _is_legacy_strict_matching(include_patterns, require_all_include_patterns):
+        include_patterns = MatchingConfig().include_patterns
 
     return AppConfig(
         data_dir=data_dir,
@@ -199,17 +215,12 @@ def parse_config(raw: dict[str, Any]) -> AppConfig:
         ),
         matching=MatchingConfig(
             case_sensitive=bool(_get(matching_raw, "case_sensitive", False)),
-            require_all_include_patterns=bool(
-                _get(matching_raw, "require_all_include_patterns", True)
-            ),
+            require_all_include_patterns=require_all_include_patterns,
             context_window_chars=_positive_int(
                 _get(matching_raw, "context_window_chars", 220),
                 "matching.context_window_chars",
             ),
-            include_patterns=_string_tuple(
-                _get(matching_raw, "include_patterns", list(MatchingConfig().include_patterns)),
-                "matching.include_patterns",
-            ),
+            include_patterns=include_patterns,
             exclude_patterns=_string_tuple(
                 _get(matching_raw, "exclude_patterns", list(MatchingConfig().exclude_patterns)),
                 "matching.exclude_patterns",
@@ -272,6 +283,13 @@ def _resolve_timezone_name(value: Any) -> str:
     if not is_valid_timezone(timezone_name):
         raise ConfigError(f"Invalid timezone: {timezone_name}")
     return timezone_name
+
+
+def _is_legacy_strict_matching(
+    include_patterns: tuple[str, ...],
+    require_all_include_patterns: bool,
+) -> bool:
+    return require_all_include_patterns and include_patterns == LEGACY_STRICT_INCLUDE_PATTERNS
 
 
 def is_valid_timezone(value: str | None) -> bool:

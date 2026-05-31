@@ -20,6 +20,7 @@ class TwikitTweetSource:
         self._client = None
         self._user_ids: dict[str, str] = {}
         self._search_unavailable = False
+        self._replies_unavailable = False
 
     async def connect(self) -> None:
         patch_twikit()
@@ -123,7 +124,21 @@ class TwikitTweetSource:
         client = self._require_client()
         user_id = await self._resolve_user_id(screen_name)
         bounded_count = min(max(1, count), 40)
-        return await client.get_user_tweets(user_id, "Replies", count=bounded_count)
+        tweets = list(await client.get_user_tweets(user_id, "Tweets", count=bounded_count))
+        if self._replies_unavailable:
+            return tweets
+        try:
+            replies = await client.get_user_tweets(user_id, "Replies", count=bounded_count)
+        except Exception as exc:
+            if _is_twikit_not_found(exc):
+                self._replies_unavailable = True
+                LOGGER.warning(
+                    "X/Twitter replies timeline endpoint returned 404; continuing "
+                    "with primary tweet timelines"
+                )
+                return tweets
+            raise
+        return _dedupe_twikit_tweets([*tweets, *replies])
 
     async def _resolve_user_id(self, screen_name: str) -> str:
         if screen_name in self._user_ids:
@@ -150,6 +165,19 @@ def _is_twikit_not_found(exc: Exception) -> bool:
     except Exception:
         return exc.__class__.__name__ == "NotFound"
     return isinstance(exc, NotFound)
+
+
+def _dedupe_twikit_tweets(tweets: list[Any]) -> list[Any]:
+    seen: set[str] = set()
+    result: list[Any] = []
+    for tweet in tweets:
+        tweet_id = str(getattr(tweet, "id", ""))
+        key = tweet_id or str(id(tweet))
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(tweet)
+    return result
 
 
 def tweet_to_record(tweet, source: str) -> TweetRecord:

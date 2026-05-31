@@ -26,6 +26,17 @@ class RegexMatcherTests(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertIn("propagation of resets", result.excerpt)
 
+    def test_matches_resetting_limits_from_trusted_account_context(self):
+        matcher = RegexMatcher(MatchingConfig())
+
+        result = matcher.match(tweet(
+            "Five million users would agree. Resetting the limits tomorrow morning to celebrate.\n\n"
+            "Time to go /fast"
+        ))
+
+        self.assertIsNotNone(result)
+        self.assertIn("Resetting the limits", result.excerpt)
+
     def test_rejects_unrelated_reset(self):
         matcher = RegexMatcher(MatchingConfig())
 

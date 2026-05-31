@@ -6,6 +6,7 @@ import logging
 import random
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
 from pathlib import Path
 
 from .config import AppConfig
@@ -19,6 +20,7 @@ from .twikit_source import TwikitTweetSource
 LOGGER = logging.getLogger(__name__)
 LAST_SCAN_AT_KEY = "last_scan_at"
 LAST_EFFECTIVE_SCAN_AT_KEY = "last_effective_scan_at"
+MATCHING_FINGERPRINT_KEY = "matching_fingerprint"
 MAX_STARTUP_CATCHUP = timedelta(days=1)
 
 
@@ -50,7 +52,9 @@ class QuotaResetTracker:
         self.state = state or StateStore(config.state_path)
         self.notifier = notifier or NotificationManager(config.notifications)
         self.started_at = datetime.now(timezone.utc)
+        self.matching_fingerprint = _matching_fingerprint(config)
         self.catchup_cutoff = self._startup_catchup_cutoff(self.started_at)
+        self.reprocess_seen_cutoff = self._matcher_reprocess_cutoff(self.started_at)
         self.allow_historical = allow_historical
         self.dump_stream_path = dump_stream_path
         if self.dump_stream_path is not None:
@@ -102,13 +106,16 @@ class QuotaResetTracker:
                 self.state.mark_seen(tweet)
                 continue
 
-            if self.state.has_seen(tweet):
+            seen_before = self.state.has_seen(tweet)
+            reprocess_seen = seen_before and self._should_reprocess_seen(tweet)
+            if seen_before and not reprocess_seen:
                 self._dump_tweet(tweet, decision="seen_duplicate")
                 duplicates += 1
                 continue
 
             if (
-                bootstrap_seen_only
+                not reprocess_seen
+                and bootstrap_seen_only
                 and not self.allow_historical
                 and self.catchup_cutoff is None
             ):
@@ -116,14 +123,19 @@ class QuotaResetTracker:
                 self.state.mark_seen(tweet)
                 continue
 
-            if not self.allow_historical and self._is_preexisting_tweet(tweet):
+            if (
+                not reprocess_seen
+                and not self.allow_historical
+                and self._is_preexisting_tweet(tweet)
+            ):
                 self._dump_tweet(tweet, decision="preexisting_suppressed")
                 self.state.mark_seen(tweet)
                 continue
 
             match = self.matcher.match(tweet)
             if match is None:
-                self._dump_tweet(tweet, decision="no_match")
+                decision = "reprocessed_no_match" if reprocess_seen else "no_match"
+                self._dump_tweet(tweet, decision=decision)
                 self.state.mark_seen(tweet)
                 continue
             matched += 1
@@ -136,7 +148,12 @@ class QuotaResetTracker:
             )
 
             if self.state.was_alerted(match):
-                self._dump_tweet(tweet, decision="alert_duplicate", match=match)
+                decision = (
+                    "reprocessed_alert_duplicate"
+                    if reprocess_seen
+                    else "alert_duplicate"
+                )
+                self._dump_tweet(tweet, decision=decision, match=match)
                 duplicates += 1
                 self.state.mark_seen(tweet)
                 continue
@@ -148,7 +165,8 @@ class QuotaResetTracker:
             delivery = await self.notifier.send_match(match)
             self.state.mark_alerted(match, delivery)
             self.state.mark_seen(tweet)
-            self._dump_tweet(tweet, decision="alerted", match=match, delivery=delivery)
+            decision = "reprocessed_alerted" if reprocess_seen else "alerted"
+            self._dump_tweet(tweet, decision=decision, match=match, delivery=delivery)
             alerted += 1
 
         summary = ScanSummary(
@@ -211,6 +229,7 @@ class QuotaResetTracker:
         self.state.set_metadata(LAST_SCAN_AT_KEY, scan_at)
         if summary.scanned > 0:
             self.state.set_metadata(LAST_EFFECTIVE_SCAN_AT_KEY, scan_at)
+            self.state.set_metadata(MATCHING_FINGERPRINT_KEY, self.matching_fingerprint)
 
     def _startup_catchup_cutoff(self, now: datetime) -> datetime | None:
         last_scan = parse_created_at(
@@ -226,6 +245,25 @@ class QuotaResetTracker:
             now.isoformat(timespec="seconds"),
         )
         return cutoff
+
+    def _matcher_reprocess_cutoff(self, now: datetime) -> datetime | None:
+        previous = self.state.get_metadata(MATCHING_FINGERPRINT_KEY)
+        if previous == self.matching_fingerprint or self.state.seen_count() == 0:
+            return None
+        cutoff = now - MAX_STARTUP_CATCHUP
+        LOGGER.info(
+            "matching profile changed or was not recorded; rechecking seen tweets since %s",
+            cutoff.isoformat(timespec="seconds"),
+        )
+        return cutoff
+
+    def _should_reprocess_seen(self, tweet: TweetRecord) -> bool:
+        if self.reprocess_seen_cutoff is None:
+            return False
+        created_at = parse_created_at(tweet.created_at)
+        if created_at is None:
+            return False
+        return created_at >= self.reprocess_seen_cutoff
 
     def _dump_tweet(
         self,
@@ -291,3 +329,14 @@ def _is_trusted_author(tweet: TweetRecord, trusted_authors: set[str]) -> bool:
 
 def _normalize_handle(value: str) -> str:
     return value.strip().lstrip("@").lower()
+
+
+def _matching_fingerprint(config: AppConfig) -> str:
+    payload = {
+        "version": 1,
+        "case_sensitive": config.matching.case_sensitive,
+        "require_all_include_patterns": config.matching.require_all_include_patterns,
+        "include_patterns": list(config.matching.include_patterns),
+        "exclude_patterns": list(config.matching.exclude_patterns),
+    }
+    return sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
