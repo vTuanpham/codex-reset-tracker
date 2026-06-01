@@ -2,9 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from codex_reset_tracker.config import (
-    LEGACY_STRICT_INCLUDE_PATTERNS,
     ConfigError,
-    MatchingConfig,
     detect_local_timezone,
     parse_config,
 )
@@ -32,16 +30,6 @@ class ConfigTests(unittest.TestCase):
         config = parse_config({"polling": {"accounts": ["OpenAI", "ClaudeDevs"]}})
 
         self.assertEqual(config.polling.search_queries, ())
-
-    def test_legacy_strict_matching_defaults_are_migrated(self):
-        config = parse_config({
-            "matching": {
-                "require_all_include_patterns": True,
-                "include_patterns": list(LEGACY_STRICT_INCLUDE_PATTERNS),
-            }
-        })
-
-        self.assertEqual(config.matching.include_patterns, MatchingConfig().include_patterns)
 
 
 if __name__ == "__main__":

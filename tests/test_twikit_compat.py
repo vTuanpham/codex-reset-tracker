@@ -3,7 +3,6 @@ import unittest
 from codex_reset_tracker.twikit_compat import (
     apply_twikit_compatibility_patches,
     _resolve_on_demand_file_url,
-    patch_twikit_client_transaction,
     _with_user_defaults,
 )
 from codex_reset_tracker.twikit_source import _forbidden_login_message
@@ -20,22 +19,12 @@ class TwikitCompatTests(unittest.TestCase):
             "https://abs.twimg.com/responsive-web/client-web/ondemand.s.abcdef123456a.js",
         )
 
-    def test_resolves_legacy_on_demand_manifest_shape(self):
-        html = '"ondemand.s": "abcdef"'
-
-        url = _resolve_on_demand_file_url(html)
-
-        self.assertEqual(
-            url,
-            "https://abs.twimg.com/responsive-web/client-web/ondemand.s.abcdefa.js",
-        )
-
     def test_patch_is_idempotent_when_twikit_is_available(self):
-        first = patch_twikit_client_transaction()
-        second = patch_twikit_client_transaction()
+        first = apply_twikit_compatibility_patches()
+        second = apply_twikit_compatibility_patches()
 
-        self.assertTrue(first)
-        self.assertTrue(second)
+        self.assertTrue(all(result.ok for result in first))
+        self.assertTrue(all(result.ok for result in second))
 
     def test_patch_registry_reports_named_results(self):
         results = apply_twikit_compatibility_patches()

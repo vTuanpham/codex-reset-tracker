@@ -16,10 +16,6 @@ ON_DEMAND_FILE_INDEX_REGEX = re.compile(
     flags=re.VERBOSE | re.MULTILINE,
 )
 ON_DEMAND_HASH_PATTERN = r""",{}:["']([0-9a-f]+)["']"""
-LEGACY_ON_DEMAND_FILE_REGEX = re.compile(
-    r"""['"]{1}ondemand\.s['"]{1}:\s*['"]{1}([\w]*)['"]{1}""",
-    flags=re.VERBOSE | re.MULTILINE,
-)
 
 
 @dataclass(frozen=True)
@@ -74,18 +70,6 @@ def patch_twikit() -> None:
     apply_twikit_compatibility_patches()
 
 
-def patch_twikit_client_transaction() -> bool:
-    """Backward-compatible boolean wrapper for tests and older imports."""
-    result = _apply_client_transaction_manifest_patch()
-    return result.ok
-
-
-def patch_twikit_user_defaults() -> bool:
-    """Backward-compatible boolean wrapper for tests and older imports."""
-    result = _apply_user_defaults_patch()
-    return result.ok
-
-
 def _apply_client_transaction_manifest_patch() -> TwikitPatchResult:
     try:
         from twikit.x_client_transaction import transaction
@@ -122,7 +106,7 @@ def _apply_client_transaction_manifest_patch() -> TwikitPatchResult:
         name="client-transaction-manifest",
         ok=True,
         applied=True,
-        detail="ClientTransaction.get_indices now supports modern and legacy ondemand.s manifests",
+        detail="ClientTransaction.get_indices now supports the current ondemand.s manifest",
     )
 
 
@@ -214,9 +198,6 @@ def _resolve_on_demand_file_url(home_page_text: str) -> str | None:
         if hash_match:
             return _asset_url(hash_match.group(1))
 
-    legacy_match = LEGACY_ON_DEMAND_FILE_REGEX.search(home_page_text)
-    if legacy_match:
-        return _asset_url(legacy_match.group(1))
     return None
 
 
