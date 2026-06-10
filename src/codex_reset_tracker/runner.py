@@ -13,7 +13,7 @@ from .config import AppConfig
 from .matcher import RegexMatcher
 from .models import TweetRecord
 from .notifiers import NotificationManager
-from .state import StateStore
+from .state import StateStore, DEFAULT_SEEN_RETENTION_DAYS, DEFAULT_ALERT_RETENTION_DAYS
 from .time_window import attach_reset_window, parse_created_at
 from .twikit_source import TwikitTweetSource
 
@@ -75,6 +75,12 @@ class QuotaResetTracker:
                 summary.alerted,
                 summary.duplicates,
             )
+            seen_deleted, alert_deleted = self.state.prune_old_records(
+                seen_retention_days=DEFAULT_SEEN_RETENTION_DAYS,
+                alert_retention_days=DEFAULT_ALERT_RETENTION_DAYS,
+            )
+            if seen_deleted or alert_deleted:
+                LOGGER.info("pruned old records: seen=%s alerts=%s", seen_deleted, alert_deleted)
             await asyncio.sleep(self._sleep_seconds())
 
     async def scan_once(self) -> ScanSummary:

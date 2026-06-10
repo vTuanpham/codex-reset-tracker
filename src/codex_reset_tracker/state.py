@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +11,10 @@ from .models import TweetMatch, TweetRecord
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+DEFAULT_SEEN_RETENTION_DAYS = 5
+DEFAULT_ALERT_RETENTION_DAYS = 30
 
 
 class StateStore:
@@ -144,3 +148,32 @@ class StateStore:
                 )
                 """
             )
+            self._db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_seen_tweets_first_seen_at ON seen_tweets(first_seen_at)"
+            )
+            self._db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_alerts_delivered_at ON alerts(delivered_at)"
+            )
+
+    def prune_old_records(
+        self,
+        seen_retention_days: int = DEFAULT_SEEN_RETENTION_DAYS,
+        alert_retention_days: int = DEFAULT_ALERT_RETENTION_DAYS,
+    ) -> tuple[int, int]:
+        """Remove old records beyond retention periods.
+
+        Returns (seen_deleted_count, alerts_deleted_count).
+        """
+        now = datetime.now(timezone.utc)
+        seen_cutoff = (now - timedelta(days=seen_retention_days)).isoformat(timespec="seconds")
+        alert_cutoff = (now - timedelta(days=alert_retention_days)).isoformat(timespec="seconds")
+
+        with self._db:
+            seen_result = self._db.execute(
+                "DELETE FROM seen_tweets WHERE first_seen_at < ?", (seen_cutoff,)
+            )
+            alert_result = self._db.execute(
+                "DELETE FROM alerts WHERE delivered_at < ?", (alert_cutoff,)
+            )
+
+        return seen_result.rowcount, alert_result.rowcount
