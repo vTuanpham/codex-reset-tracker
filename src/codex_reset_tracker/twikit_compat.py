@@ -180,6 +180,68 @@ def _apply_user_defaults_patch() -> TwikitPatchResult:
     )
 
 
+def _apply_client_transaction_init_retry_patch() -> TwikitPatchResult:
+    """Patch generate_transaction_id to reset state if key is missing.
+
+    This handles cases where init() failed (e.g., 503 from X) leaving the
+    ClientTransaction without a key attribute. By resetting home_page_response,
+    the next Client.request() call will retry init().
+    """
+    try:
+        from twikit.x_client_transaction import transaction
+    except Exception:
+        LOGGER.debug("twikit transaction module is unavailable", exc_info=True)
+        return TwikitPatchResult(
+            name="client-transaction-init-retry",
+            ok=False,
+            applied=False,
+            detail="twikit transaction module is unavailable",
+        )
+
+    client_transaction = getattr(transaction, "ClientTransaction", None)
+    if client_transaction is None:
+        return TwikitPatchResult(
+            name="client-transaction-init-retry",
+            ok=False,
+            applied=False,
+            detail="ClientTransaction class is missing",
+        )
+    if getattr(client_transaction.generate_transaction_id, PATCH_MARKER, False):
+        return TwikitPatchResult(
+            name="client-transaction-init-retry",
+            ok=True,
+            applied=False,
+            detail="already active",
+        )
+
+    original_generate = client_transaction.generate_transaction_id
+
+    def patched_generate_transaction_id(
+        self,
+        method: str,
+        path: str,
+        response=None,
+        key=None,
+        animation_key=None,
+        time_now=None,
+    ):
+        if not hasattr(self, "key") or self.key is None:
+            self.home_page_response = None
+        return original_generate(
+            self, method, path, response, key, animation_key, time_now
+        )
+
+    setattr(patched_generate_transaction_id, PATCH_MARKER, True)
+    setattr(patched_generate_transaction_id, ORIGINAL_ATTR, original_generate)
+    client_transaction.generate_transaction_id = patched_generate_transaction_id
+    return TwikitPatchResult(
+        name="client-transaction-init-retry",
+        ok=True,
+        applied=True,
+        detail="ClientTransaction.generate_transaction_id resets state if key is missing, triggering init retry on next request",
+    )
+
+
 def _twikit_version() -> str:
     try:
         return metadata.version("twikit")
@@ -263,5 +325,10 @@ TWIKIT_PATCHES = (
         name="user-optional-fields",
         reason="Current X GraphQL payloads sometimes omit optional profile fields that Twikit indexes directly.",
         apply=_apply_user_defaults_patch,
+    ),
+    TwikitPatch(
+        name="client-transaction-init-retry",
+        reason="X sometimes returns 503 on home page load, causing init() to fail before setting key. This patch retries init on generate_transaction_id.",
+        apply=_apply_client_transaction_init_retry_patch,
     ),
 )
