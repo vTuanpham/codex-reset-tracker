@@ -86,7 +86,7 @@ class NotifierTests(unittest.TestCase):
 
         self.assertEqual(command[0], "powershell.exe")
         self.assertIn("-ExecutionPolicy", command)
-        self.assertIn("System.Windows.Forms.NotifyIcon", command[-1])
+        self.assertIn("ToastNotificationManager", command[-1])
         self.assertEqual(backend, "wsl-windows")
 
     def test_wsl_desktop_notification_uses_windows_path_when_service_path_is_minimal(self):
@@ -122,8 +122,47 @@ class NotifierTests(unittest.TestCase):
             with patch("codex_reset_tracker.notifiers.shutil.which", return_value="powershell.exe"):
                 command = desktop_notification_command(message)
 
-        self.assertIn("'Codex user''s reset'", command[-1])
-        self.assertIn("'It''s ready'", command[-1])
+        # XML-escaped, so no raw quote can end the PowerShell string around the toast XML early
+        self.assertIn("Codex user&#x27;s reset", command[-1])
+        self.assertIn("It&#x27;s ready", command[-1])
+
+    def test_toast_shows_the_tweet_author_window_and_a_link_to_open_it(self):
+        message = AlertMessage(
+            title="Potential Codex quota reset",
+            body="Potential Codex quota reset\n\nAuthor: @OpenAI\n\nlong body repeating the title",
+            url="https://x.com/OpenAI/status/123",
+            payload={
+                "tweet_id": "123",
+                "excerpt": "Codex limits reset   tonight",
+                "author_username": "OpenAI",
+                "reset_window": {
+                    "user_start_at": "19:00",
+                    "user_end_at": "21:00",
+                    "user_timezone": "Asia/Saigon",
+                },
+            },
+        )
+
+        with patch("codex_reset_tracker.notifiers.platform.system", return_value="Windows"):
+            with patch("codex_reset_tracker.notifiers.shutil.which", return_value="powershell.exe"):
+                script = desktop_notification_command(message)[-1]
+
+        self.assertIn("<text>Potential Codex quota reset</text>", script)
+        self.assertIn("Codex limits reset tonight", script)  # the tweet's words, whitespace collapsed
+        self.assertNotIn("long body repeating the title", script)
+        self.assertIn("@OpenAI · reset 19:00 to 21:00 (Asia/Saigon)", script)
+        self.assertIn('content="Open tweet" activationType="protocol" arguments="https://x.com/OpenAI/status/123"', script)
+        self.assertIn("$toast.Tag = '123'", script)
+
+    def test_toast_offers_no_link_for_a_url_that_is_not_http(self):
+        message = AlertMessage(title="t", body="b", url="javascript:alert(1)", payload={})
+
+        with patch("codex_reset_tracker.notifiers.platform.system", return_value="Windows"):
+            with patch("codex_reset_tracker.notifiers.shutil.which", return_value="powershell.exe"):
+                script = desktop_notification_command(message)[-1]
+
+        self.assertNotIn("Open tweet", script)
+        self.assertNotIn("javascript", script)
 
 
 if __name__ == "__main__":

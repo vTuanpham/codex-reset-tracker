@@ -190,7 +190,9 @@ uv run codex-reset-tracker windows-startup status
 ```
 
 The scheduled task wakes WSL and starts the `service` mode. It does not use the
-portable daemon path.
+portable daemon path. It runs through `conhost.exe --headless`, so no console window
+appears on logon, unlock or wake; re-run `windows-startup install --force` to update an
+older task that opens one.
 
 If distro detection fails, set it explicitly:
 

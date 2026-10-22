@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from typing import AsyncIterator
 from typing import Any
 
@@ -11,6 +12,9 @@ from .models import TweetRecord
 from .twikit_compat import patch_twikit
 
 LOGGER = logging.getLogger(__name__)
+# An account X reports as gone is skipped for a day instead of failing on every scan.
+GONE_MARKERS = ("suspended", "does not exist")
+GONE_RETRY_S = 24 * 3600
 
 
 class TwikitTweetSource:
@@ -21,6 +25,7 @@ class TwikitTweetSource:
         self._user_ids: dict[str, str] = {}
         self._search_unavailable = False
         self._replies_unavailable = False
+        self._gone_until: dict[str, float] = {}
 
     async def connect(self) -> None:
         patch_twikit()
@@ -68,15 +73,22 @@ class TwikitTweetSource:
     ) -> AsyncIterator[TweetRecord]:
         for account in accounts:
             screen_name = normalize_handle(account)
+            if self._gone_until.get(screen_name, 0) > time.monotonic():
+                continue
             try:
                 tweets = await self._account_timeline(screen_name, count=count)
             except Exception as exc:
-                LOGGER.warning(
-                    "failed to fetch timeline for @%s: %s",
-                    screen_name,
-                    exc,
-                    exc_info=LOGGER.isEnabledFor(logging.DEBUG),
-                )
+                if any(marker in str(exc).lower() for marker in GONE_MARKERS):
+                    self._gone_until[screen_name] = time.monotonic() + GONE_RETRY_S
+                    LOGGER.warning("@%s is gone (%s); skipping it for 24h", screen_name, exc)
+                else:
+                    LOGGER.warning(
+                        "failed to fetch timeline for @%s: %s: %s",
+                        screen_name,
+                        type(exc).__name__,
+                        exc,
+                        exc_info=LOGGER.isEnabledFor(logging.DEBUG),
+                    )
                 await asyncio.sleep(self.request_delay_seconds)
                 continue
 

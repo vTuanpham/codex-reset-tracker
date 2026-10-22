@@ -102,7 +102,7 @@ class QuotaResetTracker:
             scanned += 1
 
             if not _is_trusted_author(tweet, trusted_authors):
-                LOGGER.info(
+                LOGGER.debug(  # most of a scan's lines: followed accounts' retweets and quotes
                     "skipping tweet from untrusted author @%s source=%s url=%s",
                     tweet.author_username,
                     tweet.source,

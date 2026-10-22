@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import logging
 import os
@@ -22,6 +23,8 @@ from .config import NotificationsConfig
 from .models import TweetMatch
 
 LOGGER = logging.getLogger(__name__)
+TOAST_APP_ID = "codex-reset-tracker"
+TOAST_ICON = Path(__file__).resolve().parents[2] / "assets" / "icon.png"
 
 
 class Notifier(Protocol):
@@ -363,29 +366,91 @@ def _windows_powershell_executable(*, wsl: bool) -> str | None:
 
 
 def _windows_notification_command(message: AlertMessage, executable: str) -> list[str]:
-    title = _powershell_single_quoted(message.title)
-    body = _powershell_single_quoted(message.body[:700])
-    command = (
-        "Add-Type -AssemblyName System.Windows.Forms; "
-        "Add-Type -AssemblyName System.Drawing; "
-        "$n = New-Object System.Windows.Forms.NotifyIcon; "
-        "$n.Icon = [System.Drawing.SystemIcons]::Information; "
-        f"$n.BalloonTipTitle = {title}; "
-        f"$n.BalloonTipText = {body}; "
-        "$n.Visible = $true; "
-        "$n.ShowBalloonTip(5000); "
-        "Start-Sleep -Seconds 6; "
-        "$n.Dispose()"
+    """A Windows toast under its own name and icon, with the tweet one click away."""
+    text, footer = _toast_text(message)
+    url = message.url if message.url.startswith(("https://", "http://")) else ""
+    xml = _toast_xml(message.title, text, footer, url)
+    tag = str((message.payload or {}).get("tweet_id") or "alert")[:60]  # a repeat of one tweet replaces it
+    key = rf"HKCU:\Software\Classes\AppUserModelId\{TOAST_APP_ID}"
+    command = "; ".join(
+        [
+            f"$key = {_powershell_single_quoted(key)}",
+            "if (-not (Test-Path $key)) { New-Item $key -Force | Out-Null }",
+            "Set-ItemProperty $key -Name DisplayName -Value 'Codex Reset Tracker'",
+            "Set-ItemProperty $key -Name ShowInSettings -Value 0 -Type DWord",
+            f"$src = {_powershell_single_quoted(_windows_path(TOAST_ICON))}",
+            # Toasts read the icon from a local copy; a \\wsl$ path may not be readable.
+            "if ($src -and (Test-Path $src)) { "
+            f"$dir = Join-Path $env:LOCALAPPDATA '{TOAST_APP_ID}'; "
+            "New-Item -ItemType Directory -Force $dir | Out-Null; "
+            "$icon = Join-Path $dir 'icon.png'; Copy-Item $src $icon -Force; "
+            "Set-ItemProperty $key -Name IconUri -Value $icon }",
+            "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, "
+            "ContentType=WindowsRuntime] | Out-Null",
+            "[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, "
+            "ContentType=WindowsRuntime] | Out-Null",
+            "$xml = New-Object Windows.Data.Xml.Dom.XmlDocument",
+            f"$xml.LoadXml({_powershell_single_quoted(xml)})",
+            "$toast = [Windows.UI.Notifications.ToastNotification]::new($xml)",
+            f"$toast.Tag = {_powershell_single_quoted(tag)}",
+            f"$toast.Group = '{TOAST_APP_ID}'",
+            f"[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{TOAST_APP_ID}')"
+            ".Show($toast)",
+        ]
     )
     return [
         executable,
         "-NoProfile",
         "-NonInteractive",
+        "-WindowStyle",
+        "Hidden",
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
         command,
     ]
+
+
+def _toast_text(message: AlertMessage) -> tuple[str, str]:
+    """The tweet's own words, and a one-line footer with who said it and the reset window."""
+    payload = message.payload or {}
+    text = " ".join((payload.get("excerpt") or message.body).split())
+    if text.startswith(message.title):  # a body that repeats the title says nothing new
+        text = text[len(message.title) :].lstrip()
+    footer = [f"@{payload['author_username']}"] if payload.get("author_username") else []
+    window = payload.get("reset_window")
+    if window:
+        footer.append(f"reset {window['user_start_at']} to {window['user_end_at']} ({window['user_timezone']})")
+    return text[:220], " · ".join(footer)
+
+
+def _toast_xml(title: str, text: str, footer: str, url: str) -> str:
+    def esc(value: str) -> str:
+        return html.escape(value, quote=True)
+
+    launch = f' activationType="protocol" launch="{esc(url)}"' if url else ""
+    open_button = f'<action content="Open tweet" activationType="protocol" arguments="{esc(url)}"/>' if url else ""
+    subtle = f'<text hint-style="captionSubtle">{esc(footer)}</text>' if footer else ""
+    return (
+        f'<toast scenario="reminder"{launch}><visual><binding template="ToastGeneric">'
+        f'<text>{esc(title)}</text><text hint-maxLines="4">{esc(text)}</text>{subtle}'
+        "</binding></visual>"
+        f'<actions>{open_button}<action content="Dismiss" activationType="system" arguments="dismiss"/></actions>'
+        '<audio src="ms-winsoundevent:Notification.Reminder"/></toast>'
+    )
+
+
+def _windows_path(path: Path) -> str:
+    """The path as Windows sees it, or "" when it does not exist or cannot be translated."""
+    if not path.is_file():
+        return ""
+    if platform.system().lower() == "windows":
+        return str(path)
+    try:
+        done = subprocess.run(["wslpath", "-w", str(path)], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return done.stdout.strip() if done.returncode == 0 else ""
 
 
 def _powershell_single_quoted(value: str) -> str:

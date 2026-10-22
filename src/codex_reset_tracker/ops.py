@@ -1217,8 +1217,8 @@ def _windows_startup_task_xml(
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>C:\\Windows\\System32\\wsl.exe</Command>
-      <Arguments>{html.escape(arguments)}</Arguments>
+      <Command>C:\\Windows\\System32\\conhost.exe</Command>
+      <Arguments>--headless C:\\Windows\\System32\\wsl.exe {html.escape(arguments)}</Arguments>
     </Exec>
   </Actions>
 </Task>

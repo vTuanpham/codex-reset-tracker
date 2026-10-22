@@ -216,7 +216,8 @@ class OpsTests(unittest.TestCase):
         self.assertIn("<SessionStateChangeTrigger>", xml)
         self.assertIn("Microsoft-Windows-Power-Troubleshooter", xml)
         self.assertIn("C:\\Windows\\System32\\wsl.exe", xml)
-        self.assertIn("-d Ubuntu", xml)
+        self.assertIn("<Command>C:\\Windows\\System32\\conhost.exe</Command>", xml)  # no console window
+        self.assertIn("--headless C:\\Windows\\System32\\wsl.exe -d Ubuntu", xml)
         self.assertIn("-u tuanpham", xml)
         self.assertIn("codex_reset_tracker service start", xml)
 

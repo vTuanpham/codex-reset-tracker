@@ -74,6 +74,29 @@ class TwikitSourceTests(unittest.TestCase):
         )
         self.assertEqual(client.queries, [])
 
+    def test_a_suspended_account_is_skipped_after_one_warning_and_others_continue(self):
+        source = TwikitTweetSource(TwitterConfig(), request_delay_seconds=0)
+        calls = []
+
+        async def timeline(screen_name, count):
+            calls.append(screen_name)
+            if screen_name == "gone":
+                raise RuntimeError("User is suspended")
+            return []
+
+        source._account_timeline = timeline
+
+        async def scan():
+            return [t async for t in source.iter_account_tweets(("gone", "sama"), count=5)]
+
+        with self.assertLogs("codex_reset_tracker.twikit_source", level="WARNING") as logs:
+            asyncio.run(scan())
+            asyncio.run(scan())
+
+        self.assertEqual(calls, ["gone", "sama", "sama"])  # the second scan never asks for @gone
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("@gone is gone", logs.output[0])
+
     def test_account_tweets_continue_when_replies_endpoint_404s(self):
         source = TwikitTweetSource(TwitterConfig(), request_delay_seconds=0)
         client = RepliesNotFoundClient()
