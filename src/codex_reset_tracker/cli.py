@@ -45,6 +45,8 @@ def main(argv: list[str] | None = None) -> int:
         level=getattr(logging, args.log_level.upper(), logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    if logging.getLogger().level > logging.DEBUG:  # one line per HTTP request drowns everything else
+        logging.getLogger("httpx").setLevel(logging.WARNING)
 
     try:
         if args.command == "init-config":
