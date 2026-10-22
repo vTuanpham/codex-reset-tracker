@@ -14,8 +14,6 @@ class TrackedAccount:
 DEFAULT_TRACKED_ACCOUNTS: tuple[TrackedAccount, ...] = (
     TrackedAccount("OpenAI", "America/Los_Angeles", "openai-official", "official OpenAI"),
     TrackedAccount("OpenAIDevs", "America/Los_Angeles", "openai-official", "official OpenAI developer updates"),
-    TrackedAccount("ChatGPTapp", "America/Los_Angeles", "openai-official", "official ChatGPT product updates"),
-    TrackedAccount("OpenAIStatus", "America/Los_Angeles", "openai-official", "official OpenAI status"),
     TrackedAccount("sama", "America/Los_Angeles", "openai-people", "Sam Altman"),
     TrackedAccount("gdb", "America/Los_Angeles", "openai-people", "Greg Brockman"),
     TrackedAccount("markchen90", "America/Los_Angeles", "openai-people", "Mark Chen"),

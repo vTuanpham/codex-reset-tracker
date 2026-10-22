@@ -9,8 +9,6 @@
     "account_timezones": {
       "OpenAI": "America/Los_Angeles",
       "OpenAIDevs": "America/Los_Angeles",
-      "ChatGPTapp": "America/Los_Angeles",
-      "OpenAIStatus": "America/Los_Angeles",
       "sama": "America/Los_Angeles",
       "gdb": "America/Los_Angeles",
       "markchen90": "America/Los_Angeles",
@@ -53,8 +51,6 @@
     "accounts": [
       "OpenAI",
       "OpenAIDevs",
-      "ChatGPTapp",
-      "OpenAIStatus",
       "sama",
       "gdb",
       "markchen90",

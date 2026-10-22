@@ -94,7 +94,7 @@ and developer-facing people from OpenAI and Anthropic:
 
 | Group | Handles |
 | --- | --- |
-| OpenAI official | `@OpenAI`, `@OpenAIDevs`, `@ChatGPTapp`, `@OpenAIStatus` |
+| OpenAI official | `@OpenAI`, `@OpenAIDevs` |
 | OpenAI people | `@sama`, `@gdb`, `@markchen90`, `@nickaturley`, `@kevinweil` |
 | OpenAI Codex | `@thsottiaux`, `@embirico`, `@hansonwng`, `@katyhshi` |
 | Anthropic official | `@AnthropicAI`, `@claudeai`, `@ClaudeDevs` |
@@ -102,7 +102,7 @@ and developer-facing people from OpenAI and Anthropic:
 | Claude Code | `@bcherny` |
 
 An account X reports as suspended or nonexistent is skipped for a day after one
-warning.
+warning; remove it from the list when you see that.
 
 ## Timezones
 
