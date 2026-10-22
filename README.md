@@ -81,9 +81,11 @@ Tracker" name, showing the tweet's words, the author and the reset window, with 
 Open tweet button (WSL forwards it to Windows through `powershell.exe`). On Linux it
 uses `notify-send`, on macOS `osascript`.
 
-| Telegram |
-| --- |
-| <img src="assets/telegram_noti_example.JPG" alt="Telegram notification example" width="420"> |
+Sample alerts (the title names the product the tweet is about):
+
+| Telegram | Windows toast, Codex | Windows toast, Claude |
+| --- | --- | --- |
+| <img src="assets/telegram_noti_example.JPG" alt="Telegram notification example" width="300"> | <img src="assets/toast_codex.png" alt="Windows toast for a Codex reset" width="300"> | <img src="assets/toast_claude.png" alt="Windows toast for a Claude reset" width="300"> |
 
 ## Accounts
 
