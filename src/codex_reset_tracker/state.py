@@ -89,16 +89,37 @@ class StateStore:
         ).fetchone()
         return row is not None
 
+    def get_delivery(self, tweet: TweetRecord) -> dict[str, dict[str, Any]] | None:
+        row = self._db.execute(
+            "SELECT delivery_json FROM alerts WHERE tweet_id = ? AND text_hash = ?",
+            (tweet.id, tweet.text_hash),
+        ).fetchone()
+        if row is None:
+            return None
+        delivery = json.loads(row["delivery_json"])
+        if not isinstance(delivery, dict) or any(
+            not isinstance(channel, str)
+            or not isinstance(result, dict)
+            or type(result.get("ok")) is not bool
+            for channel, result in delivery.items()
+        ):
+            raise ValueError("Stored alert delivery must contain boolean channel results")
+        return delivery
+
     def mark_alerted(self, match: TweetMatch, delivery: dict[str, Any]) -> None:
         now = utc_now_iso()
         with self._db:
+            combined_delivery = {**(self.get_delivery(match.tweet) or {}), **delivery}
             self._db.execute(
                 """
-                INSERT OR IGNORE INTO alerts (
+                INSERT INTO alerts (
                     alert_key, tweet_id, author_username, text_hash, matched_patterns,
                     excerpt, delivered_at, delivery_json
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(alert_key) DO UPDATE SET
+                    delivered_at = excluded.delivered_at,
+                    delivery_json = excluded.delivery_json
                 """,
                 (
                     match.alert_key,
@@ -108,7 +129,7 @@ class StateStore:
                     json.dumps(list(match.matched_patterns), sort_keys=True),
                     match.excerpt,
                     now,
-                    json.dumps(delivery, sort_keys=True),
+                    json.dumps(combined_delivery, sort_keys=True),
                 ),
             )
 

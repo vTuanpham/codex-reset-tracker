@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import html
 import json
 import logging
@@ -11,6 +12,7 @@ import shutil
 import subprocess
 import urllib.parse
 import urllib.request
+from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -42,7 +44,9 @@ class AlertMessage:
 
 
 class NotificationError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, delivery: dict[str, Any] | None = None):
+        super().__init__(message)
+        self.delivery = delivery
 
 
 class NotificationManager:
@@ -50,14 +54,31 @@ class NotificationManager:
         self.config = config
         self.notifiers = build_notifiers(config)
 
-    async def send_match(self, match: TweetMatch) -> dict[str, Any]:
+    @property
+    def channel_names(self) -> frozenset[str]:
+        return frozenset(notifier.name for notifier in self.notifiers)
+
+    async def send_match(
+        self,
+        match: TweetMatch,
+        *,
+        skip_channels: Collection[str] = (),
+    ) -> dict[str, Any]:
         if not self.notifiers:
             raise NotificationError("No notification channels are enabled")
+
+        pending = [
+            notifier
+            for notifier in self.notifiers
+            if notifier.name not in skip_channels
+        ]
+        if not pending:
+            return {}
 
         message = format_alert(resolve_alert_title(self.config.title, match), match)
         results: dict[str, Any] = {}
         successes = 0
-        for notifier in self.notifiers:
+        for notifier in pending:
             try:
                 await notifier.send(message)
             except Exception as exc:
@@ -68,7 +89,9 @@ class NotificationManager:
                 results[notifier.name] = {"ok": True}
 
         if successes == 0:
-            raise NotificationError(f"All notification channels failed: {results}")
+            raise NotificationError(
+                f"All notification channels failed: {results}", delivery=results
+            )
         return results
 
 
@@ -299,11 +322,11 @@ def _windows_notification_command(message: AlertMessage, executable: str) -> lis
     key = rf"HKCU:\Software\Classes\AppUserModelId\{TOAST_APP_ID}"
     command = "; ".join(
         [
-            f"$key = {_powershell_single_quoted(key)}",
+            f"$key = {_powershell_utf8_expression(key)}",
             "if (-not (Test-Path $key)) { New-Item $key -Force | Out-Null }",
             "Set-ItemProperty $key -Name DisplayName -Value 'Codex Reset Tracker'",
             "Set-ItemProperty $key -Name ShowInSettings -Value 0 -Type DWord",
-            f"$src = {_powershell_single_quoted(_windows_path(TOAST_ICON))}",
+            f"$src = {_powershell_utf8_expression(_windows_path(TOAST_ICON))}",
             # Toasts read the icon from a local copy; a \\wsl$ path may not be readable.
             "if ($src -and (Test-Path $src)) { "
             f"$dir = Join-Path $env:LOCALAPPDATA '{TOAST_APP_ID}'; "
@@ -315,9 +338,9 @@ def _windows_notification_command(message: AlertMessage, executable: str) -> lis
             "[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, "
             "ContentType=WindowsRuntime] | Out-Null",
             "$xml = New-Object Windows.Data.Xml.Dom.XmlDocument",
-            f"$xml.LoadXml({_powershell_single_quoted(xml)})",
+            f"$xml.LoadXml({_powershell_utf8_expression(xml)})",
             "$toast = [Windows.UI.Notifications.ToastNotification]::new($xml)",
-            f"$toast.Tag = {_powershell_single_quoted(tag)}",
+            f"$toast.Tag = {_powershell_utf8_expression(tag)}",
             f"$toast.Group = '{TOAST_APP_ID}'",
             f"[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{TOAST_APP_ID}')"
             ".Show($toast)",
@@ -378,8 +401,13 @@ def _windows_path(path: Path) -> str:
     return done.stdout.strip() if done.returncode == 0 else ""
 
 
-def _powershell_single_quoted(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
+def _powershell_utf8_expression(value: str) -> str:
+    # Keep tweet-controlled text out of PowerShell source; it treats smart quotes as delimiters.
+    encoded = base64.b64encode(value.encode("utf-8")).decode("ascii")
+    return (
+        "[System.Text.Encoding]::UTF8.GetString("
+        f"[System.Convert]::FromBase64String('{encoded}'))"
+    )
 
 
 def _is_wsl() -> bool:

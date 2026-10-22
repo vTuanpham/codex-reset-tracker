@@ -12,7 +12,7 @@ from pathlib import Path
 from .config import AppConfig
 from .matcher import RegexMatcher
 from .models import TweetRecord
-from .notifiers import NotificationManager
+from .notifiers import NotificationError, NotificationManager
 from .state import StateStore, DEFAULT_SEEN_RETENTION_DAYS, DEFAULT_ALERT_RETENTION_DAYS
 from .time_window import attach_reset_window, parse_created_at
 from .twikit_source import TwikitTweetSource
@@ -89,6 +89,7 @@ class QuotaResetTracker:
         scanned = 0
         matched = 0
         alerted = 0
+        delivery_attempts = 0
         duplicates = 0
         bootstrap_seen_only = (
             not self.config.polling.alert_on_first_scan
@@ -112,15 +113,27 @@ class QuotaResetTracker:
                 self.state.mark_seen(tweet)
                 continue
 
+            previous_delivery = self.state.get_delivery(tweet)
+            pending_channels = (
+                self.notifier.channel_names.intersection(
+                    channel
+                    for channel, result in previous_delivery.items()
+                    if not result["ok"]
+                )
+                if previous_delivery is not None
+                else frozenset()
+            )
+            retry_delivery = bool(pending_channels)
             seen_before = self.state.has_seen(tweet)
             reprocess_seen = seen_before and self._should_reprocess_seen(tweet)
-            if seen_before and not reprocess_seen:
+            if seen_before and not reprocess_seen and not retry_delivery:
                 self._dump_tweet(tweet, decision="seen_duplicate")
                 duplicates += 1
                 continue
 
             if (
                 not reprocess_seen
+                and not retry_delivery
                 and bootstrap_seen_only
                 and not self.allow_historical
                 and self.catchup_cutoff is None
@@ -131,6 +144,7 @@ class QuotaResetTracker:
 
             if (
                 not reprocess_seen
+                and not retry_delivery
                 and not self.allow_historical
                 and self._is_preexisting_tweet(tweet)
             ):
@@ -153,7 +167,7 @@ class QuotaResetTracker:
                 user_timezone_name=self.config.time.user_timezone,
             )
 
-            if self.state.was_alerted(match):
+            if previous_delivery is not None and not retry_delivery:
                 decision = (
                     "reprocessed_alert_duplicate"
                     if reprocess_seen
@@ -164,14 +178,36 @@ class QuotaResetTracker:
                 self.state.mark_seen(tweet)
                 continue
 
-            if alerted >= self.config.polling.max_alerts_per_scan:
+            if delivery_attempts >= self.config.polling.max_alerts_per_scan:
                 LOGGER.warning("max_alerts_per_scan reached; suppressing remaining matches")
                 break
 
-            delivery = await self.notifier.send_match(match)
+            delivery_attempts += 1
+            try:
+                if retry_delivery:
+                    delivery = await self.notifier.send_match(
+                        match,
+                        skip_channels=self.notifier.channel_names - pending_channels,
+                    )
+                else:
+                    delivery = await self.notifier.send_match(match)
+            except NotificationError as error:
+                if error.delivery:
+                    self.state.mark_alerted(match, error.delivery)
+                    self.state.mark_seen(tweet)
+                LOGGER.exception("notification delivery failed for tweet %s", tweet.id)
+                self._dump_tweet(
+                    tweet,
+                    decision="notification_failed",
+                    match=match,
+                    delivery=error.delivery,
+                )
+                continue
             self.state.mark_alerted(match, delivery)
             self.state.mark_seen(tweet)
             decision = "reprocessed_alerted" if reprocess_seen else "alerted"
+            if retry_delivery:
+                decision = "delivery_retried"
             self._dump_tweet(tweet, decision=decision, match=match, delivery=delivery)
             alerted += 1
 

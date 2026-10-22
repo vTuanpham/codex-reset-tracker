@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -41,6 +42,45 @@ class StateStoreTests(unittest.TestCase):
             store = StateStore(Path(tmp) / "state.sqlite3")
             store.mark_seen(tweet())
             store.mark_seen(tweet("Codex quota reset edited"))
+            store.close()
+
+    def test_retry_merges_channel_results_and_survives_reopen(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "state.sqlite3"
+            store = StateStore(path)
+            match = TweetMatch(tweet(), ("reset",), "Codex quota reset")
+            self.assertIsNone(store.get_delivery(match.tweet))
+            store.mark_alerted(
+                match,
+                {
+                    "telegram": {"ok": True},
+                    "desktop": {"ok": False, "error": "temporary failure"},
+                },
+            )
+            store.mark_alerted(match, {"desktop": {"ok": True}})
+            store.close()
+
+            reopened = StateStore(path)
+            self.assertEqual(
+                reopened.get_delivery(match.tweet),
+                {"telegram": {"ok": True}, "desktop": {"ok": True}},
+            )
+            self.assertIsNone(reopened.get_delivery(tweet("edited reset announcement")))
+            reopened.close()
+
+    def test_malformed_persisted_channel_results_are_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(Path(tmp) / "state.sqlite3")
+            match = TweetMatch(tweet(), ("reset",), "Codex quota reset")
+            store.mark_alerted(match, {"desktop": {"ok": True}})
+            for delivery in ([], {"desktop": True}, {"desktop": {}}, {"desktop": {"ok": 1}}):
+                with self.subTest(delivery=delivery):
+                    store._db.execute(
+                        "UPDATE alerts SET delivery_json = ? WHERE alert_key = ?",
+                        (json.dumps(delivery), match.alert_key),
+                    )
+                    with self.assertRaisesRegex(ValueError, "boolean channel results"):
+                        store.get_delivery(match.tweet)
             store.close()
 
 
