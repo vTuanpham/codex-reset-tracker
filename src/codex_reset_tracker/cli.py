@@ -24,6 +24,7 @@ from .ops import (
     windows_startup_task_status,
 )
 from .runner import QuotaResetTracker
+from .telegram_setup import setup as telegram_setup
 
 LOGGER = logging.getLogger(__name__)
 
@@ -41,6 +42,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "init-config":
             return init_config(args)
+        if args.command == "telegram":
+            telegram_setup(args.config, args.env)
+            return 0
         if args.command == "doctor":
             return asyncio.run(doctor(args))
         if args.command == "check":
@@ -80,6 +84,12 @@ def build_parser() -> argparse.ArgumentParser:
     init = subcommands.add_parser("init-config", help="write a starter config")
     init.add_argument("--path", type=Path, default=Path("config.json"))
     init.add_argument("--force", action="store_true")
+
+    telegram_cmd = subcommands.add_parser(
+        "telegram", help="connect a Telegram bot: paste its token, message it once, done"
+    )
+    telegram_cmd.add_argument("--config", type=Path, default=Path("config.json"))
+    telegram_cmd.add_argument("--env", type=Path, default=Path(".env"))
 
     doctor_cmd = subcommands.add_parser("doctor", help="check local readiness")
     doctor_cmd.add_argument("--config", type=Path, default=Path("config.json"))

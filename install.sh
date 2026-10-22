@@ -28,7 +28,8 @@ cat <<'EOF'
 Install complete.
 
 Next:
-  uv run codex-reset-tracker init-config   # then edit config.json and .env, see README.md
+  uv run codex-reset-tracker init-config   # writes config.json; see README.md
+  uv run codex-reset-tracker telegram      # connect a Telegram bot (or enable desktop in config.json)
   uv run codex-reset-tracker doctor
   uv run codex-reset-tracker test-notify
   uv run codex-reset-tracker check

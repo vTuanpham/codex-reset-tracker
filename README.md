@@ -23,9 +23,9 @@ uv run codex-reset-tracker init-config   # writes config.json from config.exampl
 
 Then:
 
-1. Edit `config.json`: set `enabled` for the channels you want and review `polling.accounts`.
-2. Put secrets in `.env` (see below).
-3. Save your X cookies as `data/x_cookies.json` (see X/Twitter Auth).
+1. Connect Telegram with `uv run codex-reset-tracker telegram` (or set `channels.desktop.enabled`
+   in `config.json` for a desktop popup) and review `polling.accounts`.
+2. Save your X cookies as `data/x_cookies.json` (see X/Twitter Auth).
 
 ```bash
 uv run codex-reset-tracker doctor
@@ -62,16 +62,19 @@ session.
 | Channel | Best for | Setup |
 | --- | --- | --- |
 | Desktop | active workstation popup | `channels.desktop.enabled: true` |
-| Telegram | fastest mobile alert | `channels.telegram.enabled: true`, plus the two env vars below |
+| Telegram | fastest mobile alert | `uv run codex-reset-tracker telegram` |
 | stdout | logs and testing | `channels.stdout.enabled: true` |
 
-Telegram: message `@BotFather`, send `/newbot`, then put the token and your chat
-id in `.env`:
+Telegram: message `@BotFather`, send `/newbot`, then run one command:
 
+```bash
+uv run codex-reset-tracker telegram
 ```
-CODQ_TELEGRAM_BOT_TOKEN=...
-CODQ_TELEGRAM_CHAT_ID=...
-```
+
+It asks for the bot token (hidden), waits while you send the bot any message,
+reads your chat id from Telegram, saves both to `.env`, turns the channel on in
+`config.json` and sends a confirmation. Restart the service afterwards
+(`service restart`).
 
 Desktop: on Windows and in WSL this is a toast under its own "Codex Reset
 Tracker" name, showing the tweet's words, the author and the reset window, with an

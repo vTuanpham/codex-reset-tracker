@@ -245,7 +245,9 @@ def _env_pair_check(name: str, first: str, second: str) -> DoctorCheck:
     return DoctorCheck(
         name,
         not missing,
-        "required env vars are set" if not missing else "missing " + ", ".join(str(item) for item in missing),
+        "required env vars are set"
+        if not missing
+        else "missing " + ", ".join(str(item) for item in missing) + "; run `uv run codex-reset-tracker telegram`",
     )
 
 
