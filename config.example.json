@@ -80,7 +80,8 @@
       "\\breset(?:s|ting|ted)?\\b"
     ],
     "exclude_patterns": [
-      "\\b(?:password\\s+reset|reset\\s+(?:your\\s+)?password|factory\\s+reset|hard\\s+reset|account\\s+recovery)\\b"
+      "\\b(?:password\\s+reset|reset\\s+(?:your\\s+)?password|factory\\s+reset|hard\\s+reset|account\\s+recovery)\\b",
+      "\\b(?:no|not|never|won'?t|don'?t|isn'?t|aren'?t|can'?t)\\s+(?:\\w+\\s+){0,2}reset(?:s|ting)?\\b"
     ]
   },
   "notifications": {

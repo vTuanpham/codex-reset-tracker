@@ -20,6 +20,8 @@ from .config import NotificationsConfig
 from .models import TweetMatch
 
 LOGGER = logging.getLogger(__name__)
+CODEX_WORDS = re.compile(r"\b(?:codex|openai|chatgpt|gpt-?\d)", re.IGNORECASE)
+CLAUDE_WORDS = re.compile(r"\b(?:claude|anthropic|opus|sonnet|haiku)\b", re.IGNORECASE)
 TOAST_APP_ID = "codex-reset-tracker"
 TOAST_ICON = Path(__file__).resolve().parents[2] / "assets" / "icon.png"
 
@@ -167,19 +169,11 @@ def _detect_product(match: TweetMatch) -> str | None:
         if group.startswith("openai"):
             return "Codex"
 
-    text = " ".join(
-        [
-            tweet.author_username,
-            tweet.author_name,
-            tweet.text,
-            match.excerpt,
-        ]
-    ).lower()
-    if "claude" in text or "anthropic" in text:
-        return "Claude"
-    if "codex" in text or "openai" in text or "chatgpt" in text:
-        return "Codex"
-    return None
+    text = " ".join([tweet.author_username, tweet.author_name, tweet.text])
+    codex, claude = len(CODEX_WORDS.findall(text)), len(CLAUDE_WORDS.findall(text))
+    if codex == claude:  # nothing, or a tweet comparing both: the generic title says it without guessing
+        return None
+    return "Claude" if claude > codex else "Codex"
 
 
 class StdoutNotifier:

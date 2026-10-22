@@ -66,6 +66,25 @@ class NotifierTests(unittest.TestCase):
         title = resolve_alert_title("Potential Codex quota reset", anthropic_match)
         self.assertEqual(title, "Potential Claude quota reset")
 
+    def test_unknown_authors_get_the_product_their_tweet_talks_about_most(self):
+        def title_for(text):
+            tweet = TweetRecord(
+                id="9",
+                author_username="someone",
+                author_name="Some One",
+                text=text,
+                created_at="today",
+                url="https://x.com/someone/status/9",
+                source="test",
+            )
+            found = TweetMatch(tweet=tweet, matched_patterns=("reset",), excerpt=text)
+            return resolve_alert_title("Potential quota reset", found)
+
+        self.assertEqual(title_for("Opus and Sonnet limits reset, Claude Code too"), "Potential Claude quota reset")
+        self.assertEqual(title_for("Codex limits reset, GPT-5 included"), "Potential Codex quota reset")
+        # a tweet that weighs both says nothing about which one reset, so the generic title stays
+        self.assertEqual(title_for("Codex limits reset while Claude's did not"), "Potential quota reset")
+
     def test_resolve_alert_title_keeps_codex_for_openai_accounts(self):
         title = resolve_alert_title("Potential Codex quota reset", match())
         self.assertEqual(title, "Potential Codex quota reset")

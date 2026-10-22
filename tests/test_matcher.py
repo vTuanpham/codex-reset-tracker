@@ -51,6 +51,18 @@ class RegexMatcherTests(unittest.TestCase):
 
         self.assertIsNone(result)
 
+    def test_denials_of_a_reset_do_not_alert_but_other_uses_of_no_and_not_do(self):
+        matcher = RegexMatcher(MatchingConfig())
+
+        for text in ("No reset today, sorry", "We won't be resetting limits this week", "not resetting yet"):
+            self.assertIsNone(matcher.match(tweet(text)), text)
+        for text in (
+            "Resetting limits now, no need to wait",
+            "Do not worry, we reset limits tonight",
+            "No wait, resets are live",
+        ):
+            self.assertIsNotNone(matcher.match(tweet(text)), text)
+
     def test_any_mode_can_match_single_pattern(self):
         matcher = RegexMatcher(
             MatchingConfig(

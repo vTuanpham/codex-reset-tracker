@@ -83,6 +83,8 @@ class MatchingConfig:
     )
     exclude_patterns: tuple[str, ...] = (
         r"\b(?:password\s+reset|reset\s+(?:your\s+)?password|factory\s+reset|hard\s+reset|account\s+recovery)\b",
+        # a denial: "no reset today", "we won't be resetting", "not resetting yet"
+        r"\b(?:no|not|never|won'?t|don'?t|isn'?t|aren'?t|can'?t)\s+(?:\w+\s+){0,2}reset(?:s|ting)?\b",
     )
 
 

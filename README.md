@@ -116,6 +116,20 @@ warning; remove it from the list when you see that.
 Example: if `@thsottiaux` says `this evening`, the phrase is interpreted in
 `America/Los_Angeles`, then translated to your detected local timezone.
 
+A zone named in the tweet (`3pm PT`, `15:00 UTC`, `Friday evening ET`) beats the
+account's default. The time phrases it understands:
+
+| Kind | Examples |
+| --- | --- |
+| Relative | `in an hour`, `in a couple of hours`, `in 2-3 hours`, `within the hour`, `in the next few hours`, `any minute now` |
+| Clock | `at 3pm PT`, `15:00 UTC`, `by noon`, `at midnight`, `tomorrow at 9am`, `Friday 10am`, `between 3 and 5pm ET` |
+| Part of day | `tonight`, `this evening`, `tomorrow morning`, `Friday evening`, `later today`, `by EOD` |
+| Whole day | `on Monday`, `tomorrow`, `this weekend`, `next week` (low confidence) |
+| Already done | `we just reset`, `resetting now`, `reset as of 10:00 UTC`: shown as live now |
+
+Denials such as `no reset today` or `we won't be resetting` do not alert (an
+`exclude_patterns` entry in `config.json`).
+
 Override your timezone only when needed:
 
 ```json
