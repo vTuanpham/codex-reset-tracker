@@ -8,13 +8,10 @@ import os
 import platform
 import re
 import shutil
-import smtplib
 import subprocess
-import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from email.message import EmailMessage
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -80,10 +77,6 @@ def build_notifiers(config: NotificationsConfig) -> list[Notifier]:
         notifiers.append(StdoutNotifier())
     if _enabled(channels, "telegram"):
         notifiers.append(TelegramNotifier(channels["telegram"]))
-    if _enabled(channels, "email"):
-        notifiers.append(EmailNotifier(channels["email"]))
-    if _enabled(channels, "webhook"):
-        notifiers.append(WebhookNotifier(channels["webhook"]))
     if _enabled(channels, "desktop"):
         notifiers.append(DesktopNotifier())
     return notifiers
@@ -219,68 +212,6 @@ class TelegramNotifier:
         with urllib.request.urlopen(request, timeout=20) as response:
             if response.status >= 300:
                 raise NotificationError(f"Telegram returned HTTP {response.status}")
-
-
-class EmailNotifier:
-    name = "email"
-
-    def __init__(self, config: dict[str, Any]):
-        self.smtp_host = _required_env(config, "smtp_host_env")
-        self.smtp_port = int(config.get("smtp_port", 587))
-        self.smtp_username = _optional_env(config, "smtp_username_env")
-        self.smtp_password = _optional_env(config, "smtp_password_env")
-        self.sender = _required_env(config, "from_env")
-        self.recipients = _csv(_required_env(config, "to_env"))
-        self.starttls = bool(config.get("starttls", True))
-
-    async def send(self, message: AlertMessage) -> None:
-        await asyncio.to_thread(self._send_sync, message)
-
-    def _send_sync(self, message: AlertMessage) -> None:
-        email = EmailMessage()
-        email["Subject"] = message.title
-        email["From"] = self.sender
-        email["To"] = ", ".join(self.recipients)
-        email.set_content(message.body)
-
-        with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=20) as server:
-            if self.starttls:
-                server.starttls()
-            if self.smtp_username:
-                server.login(self.smtp_username, self.smtp_password or "")
-            server.send_message(email)
-
-
-class WebhookNotifier:
-    name = "webhook"
-
-    def __init__(self, config: dict[str, Any]):
-        self.url = _required_env(config, "url_env")
-        self.format = str(config.get("format", "generic")).lower()
-
-    async def send(self, message: AlertMessage) -> None:
-        await asyncio.to_thread(self._send_sync, message)
-
-    def _send_sync(self, message: AlertMessage) -> None:
-        if self.format == "discord":
-            payload = {"content": message.body[:1900]}
-        elif self.format == "slack":
-            payload = {"text": message.body}
-        else:
-            payload = message.payload | {"body": message.body}
-
-        request = urllib.request.Request(
-            self.url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=20) as response:
-                if response.status >= 300:
-                    raise NotificationError(f"Webhook returned HTTP {response.status}")
-        except urllib.error.HTTPError as exc:
-            raise NotificationError(f"Webhook returned HTTP {exc.code}") from exc
 
 
 class DesktopNotifier:
@@ -475,15 +406,3 @@ def _required_env(config: dict[str, Any], key: str) -> str:
     if not value:
         raise NotificationError(f"Environment variable is required: {env_name}")
     return value
-
-
-def _optional_env(config: dict[str, Any], key: str) -> str | None:
-    env_name = str(config.get(key, "")).strip()
-    if not env_name:
-        return None
-    value = os.getenv(env_name)
-    return value or None
-
-
-def _csv(value: str) -> list[str]:
-    return [item.strip() for item in value.split(",") if item.strip()]

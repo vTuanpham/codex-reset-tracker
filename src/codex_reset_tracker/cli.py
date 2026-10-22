@@ -15,23 +15,13 @@ from .models import TweetRecord
 from .notifiers import NotificationError, NotificationManager
 from .ops import (
     OpsError,
-    account_summary,
-    add_account_config,
-    daemon_start,
-    daemon_status,
-    daemon_stop,
     doctor_checks,
-    install_default_accounts,
     install_user_service,
     install_windows_startup_task,
     read_status,
-    remove_account_config,
     service_action,
     uninstall_windows_startup_task,
     windows_startup_task_status,
-    write_account_setup,
-    write_notification_setup,
-    write_setup,
 )
 from .runner import QuotaResetTracker
 
@@ -51,14 +41,6 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "init-config":
             return init_config(args)
-        if args.command == "setup":
-            return setup(args)
-        if args.command == "setup-notifications":
-            return setup_notifications(args)
-        if args.command == "setup-accounts":
-            return setup_accounts(args)
-        if args.command == "accounts":
-            return accounts(args)
         if args.command == "doctor":
             return asyncio.run(doctor(args))
         if args.command == "check":
@@ -73,8 +55,6 @@ def main(argv: list[str] | None = None) -> int:
             return service(args)
         if args.command == "windows-startup":
             return windows_startup(args)
-        if args.command == "daemon":
-            return daemon(args)
         if args.command == "test-notify":
             return asyncio.run(test_notify(args))
     except (ConfigError, OpsError) as exc:
@@ -82,7 +62,6 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     except NotificationError as exc:
         LOGGER.error("%s", exc)
-        LOGGER.error("Run `uv run codex-reset-tracker setup-notifications` to configure or repair notification channels.")
         return 2
     except subprocess.CalledProcessError as exc:
         LOGGER.error("command failed with exit code %s: %s", exc.returncode, exc.cmd)
@@ -101,42 +80,6 @@ def build_parser() -> argparse.ArgumentParser:
     init = subcommands.add_parser("init-config", help="write a starter config")
     init.add_argument("--path", type=Path, default=Path("config.json"))
     init.add_argument("--force", action="store_true")
-
-    setup_cmd = subcommands.add_parser("setup", help="write config.json and .env")
-    setup_cmd.add_argument("--config", type=Path, default=Path("config.json"))
-    setup_cmd.add_argument("--env", type=Path, default=Path(".env"))
-    setup_cmd.add_argument("--force", action="store_true")
-    setup_cmd.add_argument("--non-interactive", action="store_true")
-
-    notification_setup = subcommands.add_parser(
-        "setup-notifications",
-        help="guide notification setup and update config.json/.env",
-    )
-    notification_setup.add_argument("--config", type=Path, default=Path("config.json"))
-    notification_setup.add_argument("--env", type=Path, default=Path(".env"))
-    notification_setup.add_argument("--non-interactive", action="store_true")
-
-    account_setup = subcommands.add_parser(
-        "setup-accounts",
-        help="guide tracked account setup and update config.json",
-    )
-    account_setup.add_argument("--config", type=Path, default=Path("config.json"))
-    account_setup.add_argument("--non-interactive", action="store_true")
-
-    accounts_cmd = subcommands.add_parser("accounts", help="list or edit tracked accounts")
-    accounts_cmd.add_argument("--config", type=Path, default=Path("config.json"))
-    accounts_subcommands = accounts_cmd.add_subparsers(dest="accounts_command", required=True)
-    accounts_subcommands.add_parser("list", help="list tracked accounts")
-    accounts_subcommands.add_parser("defaults", help="install or refresh recommended accounts")
-    add_account = accounts_subcommands.add_parser("add", help="add one tracked account")
-    add_account.add_argument("handle")
-    add_account.add_argument(
-        "--timezone",
-        default=None,
-        help="source timezone for this account, for example America/Los_Angeles",
-    )
-    remove_account = accounts_subcommands.add_parser("remove", help="remove one tracked account")
-    remove_account.add_argument("handle")
 
     doctor_cmd = subcommands.add_parser("doctor", help="check local readiness")
     doctor_cmd.add_argument("--config", type=Path, default=Path("config.json"))
@@ -202,12 +145,6 @@ def build_parser() -> argparse.ArgumentParser:
         item = windows_startup_subcommands.add_parser(command)
         item.add_argument("--task-name", default="CodexResetTracker")
 
-    daemon_cmd = subcommands.add_parser("daemon", help="manage portable background daemon fallback")
-    daemon_subcommands = daemon_cmd.add_subparsers(dest="daemon_command", required=True)
-    for command in ("start", "stop", "status", "logs"):
-        item = daemon_subcommands.add_parser(command)
-        item.add_argument("--config", type=Path, default=Path("config.json"))
-
     notify = subcommands.add_parser("test-notify", help="send a synthetic alert through configured channels")
     notify.add_argument("--config", type=Path, default=Path("config.json"))
     notify.add_argument(
@@ -215,55 +152,6 @@ def build_parser() -> argparse.ArgumentParser:
         default="Synthetic alert: Codex quota limits may have reset.",
     )
     return parser
-
-
-def setup(args) -> int:
-    config_path, env_path = write_setup(
-        config_path=args.config,
-        env_path=args.env,
-        force=args.force,
-        non_interactive=args.non_interactive,
-    )
-    LOGGER.info("wrote %s and %s", config_path, env_path)
-    LOGGER.info("next: run `uv run codex-reset-tracker doctor`")
-    return 0
-
-
-def setup_notifications(args) -> int:
-    config_path, env_path = write_notification_setup(
-        config_path=args.config,
-        env_path=args.env,
-        non_interactive=args.non_interactive,
-    )
-    LOGGER.info("updated notification setup in %s and %s", config_path, env_path)
-    LOGGER.info("next: run `uv run codex-reset-tracker test-notify`")
-    return 0
-
-
-def setup_accounts(args) -> int:
-    config_path = write_account_setup(
-        config_path=args.config,
-        non_interactive=args.non_interactive,
-    )
-    LOGGER.info("updated tracked accounts in %s", config_path)
-    LOGGER.info("next: run `uv run codex-reset-tracker doctor`")
-    return 0
-
-
-def accounts(args) -> int:
-    command = args.accounts_command
-    if command == "list":
-        print(account_summary(args.config))
-    elif command == "defaults":
-        install_default_accounts(args.config)
-        LOGGER.info("installed recommended tracked accounts in %s", args.config)
-    elif command == "add":
-        add_account_config(args.config, args.handle, args.timezone)
-        LOGGER.info("added @%s to %s", args.handle.lstrip("@"), args.config)
-    elif command == "remove":
-        remove_account_config(args.config, args.handle)
-        LOGGER.info("removed @%s from %s", args.handle.lstrip("@"), args.config)
-    return 0
 
 
 async def doctor(args) -> int:
@@ -400,26 +288,6 @@ def windows_startup(args) -> int:
     elif command == "uninstall":
         task_name = uninstall_windows_startup_task(args.task_name)
         LOGGER.info("uninstalled Windows Scheduled Task %s", task_name)
-    return 0
-
-
-def daemon(args) -> int:
-    command = args.daemon_command
-    if command == "start":
-        path = daemon_start(args.config)
-        LOGGER.info("daemon started; pid file: %s", path)
-    elif command == "stop":
-        stopped = daemon_stop(args.config)
-        LOGGER.info("daemon %s", "stopping" if stopped else "was not running")
-    elif command == "status":
-        print(daemon_status(args.config))
-    elif command == "logs":
-        config = load_config(args.config)
-        log_path = config.runtime_dir / "tracker.log"
-        if log_path.exists():
-            print(log_path.read_text(encoding="utf-8")[-8000:])
-        else:
-            LOGGER.info("no daemon log found at %s", log_path)
     return 0
 
 

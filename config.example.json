@@ -98,21 +98,6 @@
         "bot_token_env": "CODQ_TELEGRAM_BOT_TOKEN",
         "chat_id_env": "CODQ_TELEGRAM_CHAT_ID"
       },
-      "email": {
-        "enabled": false,
-        "smtp_host_env": "CODQ_SMTP_HOST",
-        "smtp_port": 587,
-        "smtp_username_env": "CODQ_SMTP_USERNAME",
-        "smtp_password_env": "CODQ_SMTP_PASSWORD",
-        "from_env": "CODQ_EMAIL_FROM",
-        "to_env": "CODQ_EMAIL_TO",
-        "starttls": true
-      },
-      "webhook": {
-        "enabled": false,
-        "url_env": "CODQ_WEBHOOK_URL",
-        "format": "generic"
-      },
       "desktop": {
         "enabled": false
       }

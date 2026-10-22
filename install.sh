@@ -28,9 +28,7 @@ cat <<'EOF'
 Install complete.
 
 Next:
-  uv run codex-reset-tracker setup
-  # Existing installs can rerun only notification setup:
-  uv run codex-reset-tracker setup-notifications
+  uv run codex-reset-tracker init-config   # then edit config.json and .env, see README.md
   uv run codex-reset-tracker doctor
   uv run codex-reset-tracker test-notify
   uv run codex-reset-tracker check
@@ -38,7 +36,4 @@ Next:
 Background service:
   uv run codex-reset-tracker service install
   uv run codex-reset-tracker service start
-
-Fallback only if service install fails:
-  uv run codex-reset-tracker daemon start
 EOF

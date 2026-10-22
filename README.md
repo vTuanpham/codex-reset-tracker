@@ -1,7 +1,7 @@
 # Codex Reset Tracker
 
-Watch trusted X/Twitter accounts for fresh `reset` posts and notify you by
-Telegram, email, webhook, desktop popup, or stdout.
+Watch trusted X/Twitter accounts for fresh `reset` posts (Codex and Claude usage
+limits) and notify you by Telegram or a desktop popup.
 
 | Area | Default |
 | --- | --- |
@@ -12,39 +12,30 @@ Telegram, email, webhook, desktop popup, or stdout.
 | User timezone | auto-detected from the current machine unless overridden |
 | Source timezone | per-account, used for phrases like `this evening` |
 
-## Fast Start
+## Quick Start
 
 ```bash
 git clone https://github.com/vTuanpham/codex-reset-tracker.git
 cd codex-reset-tracker
 ./install.sh
-uv run codex-reset-tracker setup
+uv run codex-reset-tracker init-config   # writes config.json from config.example.json
+```
+
+Then:
+
+1. Edit `config.json`: set `enabled` for the channels you want and review `polling.accounts`.
+2. Put secrets in `.env` (see below).
+3. Save your X cookies as `data/x_cookies.json` (see X/Twitter Auth).
+
+```bash
 uv run codex-reset-tracker doctor
 uv run codex-reset-tracker test-notify
 uv run codex-reset-tracker check
-```
-
-The first `check` is a baseline pass by default. Keep the process running to
-catch newly discovered tweets:
-
-```bash
 uv run codex-reset-tracker run
 ```
 
-## Setup Map
-
-| Need | Command |
-| --- | --- |
-| Full first-time wizard | `uv run codex-reset-tracker setup` |
-| Notification wizard only | `uv run codex-reset-tracker setup-notifications` |
-| Account wizard only | `uv run codex-reset-tracker setup-accounts` |
-| List tracked accounts | `uv run codex-reset-tracker accounts list` |
-| Add one account | `uv run codex-reset-tracker accounts add thsottiaux --timezone America/Los_Angeles` |
-| Remove one account | `uv run codex-reset-tracker accounts remove thsottiaux` |
-| Refresh recommended accounts | `uv run codex-reset-tracker accounts defaults` |
-
-`setup` writes normal settings to `config.json` and secrets to `.env`. You should
-not need to hand-edit JSON for normal use.
+The first `check` is a baseline pass by default. Keep `run` going to catch newly
+discovered tweets, or install the background service below.
 
 ## X/Twitter Auth
 
@@ -61,61 +52,42 @@ Cookie steps:
 
 1. Install [Cookie-Editor (Chrome Web Store)](https://chromewebstore.google.com/detail/cookie-editor/ookdjilphngeeeghgngjabigmpepanpl?hl=en-US&utm_source=ext_sidebar).
 2. Open `https://x.com` and log in.
-3. Click Cookie-Editor while on `x.com`.
-4. Export/copy JSON.
-5. Save it here:
-
-```bash
-mkdir -p data
-# save the Cookie-Editor JSON as:
-data/x_cookies.json
-```
+3. Click Cookie-Editor while on `x.com`, export the JSON, and save it as `data/x_cookies.json`.
 
 Do not commit or share `data/x_cookies.json`; it can grant access to your X
 session.
 
 ## Notifications
 
-| Channel | Best for | CLI setup |
+| Channel | Best for | Setup |
 | --- | --- | --- |
-| Desktop | active workstation popup | `setup-notifications` -> enable desktop |
-| Telegram | fastest mobile alert | `setup-notifications` -> enable Telegram |
-| Email | durable fallback | `setup-notifications` -> enable email |
-| Webhook | Discord, Slack, ntfy, Pushover, Home Assistant | `setup-notifications` -> enable webhook |
-| stdout | logs and testing | enabled by default |
+| Desktop | active workstation popup | `channels.desktop.enabled: true` |
+| Telegram | fastest mobile alert | `channels.telegram.enabled: true`, plus the two env vars below |
+| stdout | logs and testing | `channels.stdout.enabled: true` |
 
-Desktop is asked first in the wizard. When running inside WSL, desktop
-notifications are forwarded to Windows through `powershell.exe`.
+Telegram: message `@BotFather`, send `/newbot`, then put the token and your chat
+id in `.env`:
 
-Example alert outputs:
+```
+CODQ_TELEGRAM_BOT_TOKEN=...
+CODQ_TELEGRAM_CHAT_ID=...
+```
 
-| Telegram | Windows desktop |
-| --- | --- |
-| <img src="assets/telegram_noti_example.JPG" alt="Telegram notification example" width="420"> | <img src="assets/window_noti_example.JPG" alt="Windows desktop notification example" width="360"> |
+Desktop: on Windows and in WSL this is a toast under its own "Codex Reset
+Tracker" name, showing the tweet's words, the author and the reset window, with an
+Open tweet button (WSL forwards it to Windows through `powershell.exe`). On Linux it
+uses `notify-send`, on macOS `osascript`.
 
-Telegram quick path:
-
-1. Message `@BotFather`.
-2. Send `/newbot`.
-3. Paste the token into the wizard.
-4. Send any message to the new bot.
-5. Let the wizard auto-detect the chat id, or paste it manually.
+| Telegram |
+| --- |
+| <img src="assets/telegram_noti_example.JPG" alt="Telegram notification example" width="420"> |
 
 ## Accounts
 
-The tracker has two safeguards:
-
-1. Searches are generated as `from:<handle> reset`.
-2. Every tweet is checked again locally; only authors in `polling.accounts` can
-   alert.
-
-That means broad or noisy search results from unrelated accounts are recorded as
-`untrusted_author` and do not notify.
-
-### Seeded Watchlist
-
-The default watchlist includes official accounts and active developer-facing
-people from OpenAI and Anthropic/Claude.
+Only authors listed in `polling.accounts` can alert. Every tweet is checked
+locally; results from other accounts are recorded as `untrusted_author` and do
+not notify. Edit the list in `config.json`. The defaults cover official accounts
+and developer-facing people from OpenAI and Anthropic:
 
 | Group | Handles |
 | --- | --- |
@@ -126,14 +98,8 @@ people from OpenAI and Anthropic/Claude.
 | Anthropic people | `@DarioAmodei`, `@DanielaAmodei`, `@jackclarkSF`, `@mikeyk`, `@ch402` |
 | Claude Code | `@bcherny` |
 
-Sources used to seed this list include official X pages and public index pages
-for [OpenAI Developers](https://x.com/OpenAIDevs),
-[Tibo / Codex](https://x.com/thsottiaux/with_replies?lang=en),
-[Anthropic](https://x.com/AnthropicAI/status/2025997928242811253?lang=en),
-[Claude](https://x.com/claudeai/status/1972706815885373936), the reported
-[@ClaudeDevs launch](https://awesomeagents.ai/news/anthropic-claudedevs-x-account-launch/),
-and public profiles for [Boris Cherny](https://x.com/bcherny/status/2015524460481388760)
-and the [Anthropic radar](https://llmgram.app/anthropic-radar/).
+An account X reports as suspended or nonexistent is skipped for a day after one
+warning.
 
 ## Timezones
 
@@ -158,8 +124,6 @@ Override your timezone only when needed:
 
 ## Background Service
 
-Use the service for normal background operation:
-
 ```bash
 uv run codex-reset-tracker service install
 uv run codex-reset-tracker service start
@@ -167,73 +131,32 @@ uv run codex-reset-tracker service status
 uv run codex-reset-tracker service logs
 ```
 
-Use this for a normal Linux or WSL install. It runs through `systemd --user`,
-gets restart handling, and writes logs to the user journal.
-
-For one-off testing, run it in the foreground:
-
-```bash
-uv run codex-reset-tracker run
-uv run codex-reset-tracker status
-```
+It runs through `systemd --user`, gets restart handling, and writes logs to the
+user journal. For one-off testing run `uv run codex-reset-tracker run` in the
+foreground and `uv run codex-reset-tracker status` for the last scan.
 
 ### Optional WSL Auto-Start
 
-If you use WSL and want tracker auto-start after Windows logon/unlock/wake,
-install the Windows scheduled-task bridge:
+To start the tracker after Windows logon, unlock or wake, install the Windows
+scheduled-task bridge:
 
 ```bash
-uv run codex-reset-tracker service install
-uv run codex-reset-tracker service start
 uv run codex-reset-tracker windows-startup install --force
 uv run codex-reset-tracker windows-startup status
 ```
 
-The scheduled task wakes WSL and starts the `service` mode. It does not use the
-portable daemon path. It runs through `conhost.exe --headless`, so no console window
-appears on logon, unlock or wake; re-run `windows-startup install --force` to update an
-older task that opens one.
-
-If distro detection fails, set it explicitly:
-
-```bash
-uv run codex-reset-tracker windows-startup install --distro Ubuntu --force
-```
-
-Microsoft documents that [`wsl.exe` can run a specific distro from Windows](https://learn.microsoft.com/en-us/windows/wsl/basic-commands)
-and that [WSL supports `systemd`](https://learn.microsoft.com/en-us/windows/wsl/systemd);
-this project uses both pieces for the Windows Scheduled Task bridge.
-
-### Daemon Fallback
-
-Use this only if `service install` fails because `systemd --user` is unavailable:
-
-```bash
-uv run codex-reset-tracker daemon start
-uv run codex-reset-tracker daemon status
-uv run codex-reset-tracker daemon logs
-```
-
-The daemon is just a detached local process with a pid file and log file under
-`data/runtime`. It is not an installed OS service and should not be run at the
-same time as `service`.
+The task wakes WSL and starts the `service`. It runs through
+`conhost.exe --headless`, so no console window appears; re-run the install
+with `--force` to update an older task that opens one. If distro detection
+fails, pass `--distro Ubuntu`.
 
 ## Diagnostics
 
-Historical diagnostic scan, without touching production state or sending real
+A historical scan, without touching production state or sending real
 notifications:
 
 ```bash
-uv run codex-reset-tracker debug-scan \
-  --config config.json \
-  --query 'from:thsottiaux reset' \
-  --dump-stream data/runtime/debug-scan.jsonl
-```
-
-Use a specific account override:
-
-```bash
-uv run codex-reset-tracker debug-scan --account thsottiaux
+uv run codex-reset-tracker debug-scan --account thsottiaux --dump-stream data/runtime/debug-scan.jsonl
 ```
 
 Run tests:

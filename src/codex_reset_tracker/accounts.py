@@ -53,22 +53,5 @@ def account_group_for_handle(handle: str) -> str | None:
     return None
 
 
-def reset_search_queries(accounts: list[str] | tuple[str, ...]) -> tuple[str, ...]:
-    return tuple(f"from:{normalize_handle(account)} reset" for account in accounts if normalize_handle(account))
-
-
 def normalize_handle(value: str) -> str:
     return value.strip().lstrip("@")
-
-
-def unique_handles(handles: list[str] | tuple[str, ...]) -> list[str]:
-    seen: set[str] = set()
-    result: list[str] = []
-    for handle in handles:
-        normalized = normalize_handle(handle)
-        key = normalized.lower()
-        if not normalized or key in seen:
-            continue
-        seen.add(key)
-        result.append(normalized)
-    return result
