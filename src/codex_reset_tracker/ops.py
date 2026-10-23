@@ -188,6 +188,7 @@ def windows_startup_task_status(task_name: str) -> str:
     if not powershell:
         raise OpsError("powershell.exe is unavailable; enable WSL Windows interop")
     command = (
+        "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); "
         f"$task = Get-ScheduledTask -TaskName { _powershell_quote(task_name) } -ErrorAction SilentlyContinue; "
         "if ($null -eq $task) { 'not installed' } "
         "else { \"installed state=$($task.State)\" }"
@@ -196,7 +197,7 @@ def windows_startup_task_status(task_name: str) -> str:
         [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
         check=True,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
     )
     return completed.stdout.strip()
 

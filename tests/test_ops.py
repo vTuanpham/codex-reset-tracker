@@ -1,5 +1,6 @@
 import os
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,6 +12,7 @@ from codex_reset_tracker.ops import (
     _validate_service_prereqs,
     _windows_startup_task_xml,
     doctor_checks,
+    windows_startup_task_status,
 )
 
 EXAMPLE_CONFIG = Path(__file__).resolve().parents[1] / "config.example.json"
@@ -22,6 +24,18 @@ def write_starter_files(config_path: Path, env_path: Path) -> None:
 
 
 class OpsTests(unittest.TestCase):
+    def test_windows_status_keeps_unicode_errors_and_status_readable(self):
+        with patch("codex_reset_tracker.ops.shutil.which", return_value="powershell.exe"), patch(
+            "codex_reset_tracker.ops.subprocess.run",
+            return_value=subprocess.CompletedProcess([], 0, "installed state=Ready\r\n"),
+        ) as run:
+            self.assertEqual(windows_startup_task_status("Suivi · ảnh"), "installed state=Ready")
+        self.assertEqual(run.call_args.kwargs["encoding"], "utf-8")
+        self.assertTrue(run.call_args.kwargs["check"])
+        command = run.call_args.args[0][-1]
+        self.assertIn("[Console]::OutputEncoding", command)
+        self.assertIn("Suivi · ảnh", command)
+
     def test_doctor_reports_missing_auth_with_the_starter_config(self):
         with tempfile.TemporaryDirectory() as tmp:
             previous_cwd = Path.cwd()
